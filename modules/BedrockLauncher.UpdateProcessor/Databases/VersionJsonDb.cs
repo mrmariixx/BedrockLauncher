@@ -53,8 +53,11 @@ namespace BedrockLauncher.UpdateProcessor.Databases
                 valuesList,
                 Formatting.Indented);
 
-            Directory.CreateDirectory(
-                Path.GetDirectoryName(filePath) ?? ".");
+            string directory =
+                Path.GetDirectoryName(filePath);
+
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
 
             File.WriteAllText(filePath, json);
         }
@@ -70,14 +73,22 @@ namespace BedrockLauncher.UpdateProcessor.Databases
 
             JArray data = JArray.Parse(json);
 
-            foreach (JArray item in data)
+            foreach (JToken token in data)
             {
+                if (!(token is JArray item))
+                    continue;
+
                 if (item.Count < 3)
                     continue;
 
-                string version = item[0]?.Value<string>();
-                string uuid = item[1]?.Value<string>();
-                int typeValue = item[2]?.Value<int>() ?? 0;
+                string version =
+                    item[0]?.Value<string>();
+
+                string uuid =
+                    item[1]?.Value<string>();
+
+                int typeValue =
+                    item[2]?.Value<int>() ?? 0;
 
                 if (string.IsNullOrWhiteSpace(version) ||
                     string.IsNullOrWhiteSpace(uuid))
@@ -85,20 +96,23 @@ namespace BedrockLauncher.UpdateProcessor.Databases
                     continue;
                 }
 
-                VersionType versionType = (VersionType)typeValue;
+                VersionType versionType =
+                    (VersionType)typeValue;
 
                 string architecture =
                     item.Count >= 4
                         ? item[3]?.Value<string>()
                         : VersionDbExtensions.FallbackArch;
 
+                if (string.IsNullOrWhiteSpace(architecture))
+                    architecture = VersionDbExtensions.FallbackArch;
+
+                // Old database entries contain only four fields.
+                // Old entries are treated as UWP.
                 PackageType packageType =
                     item.Count >= 5
                         ? (PackageType)(item[4]?.Value<int>() ?? 0)
                         : PackageType.UWP;
-
-                if (string.IsNullOrWhiteSpace(architecture))
-                    architecture = VersionDbExtensions.FallbackArch;
 
                 if (architecture == VersionDbExtensions.FallbackArch &&
                     architectures != null &&
@@ -110,15 +124,15 @@ namespace BedrockLauncher.UpdateProcessor.Databases
                     architecture = knownArchitecture;
                 }
 
-                var parsed = new VersionInfoJson(
+                var parsedVersion = new VersionInfoJson(
                     version,
                     uuid,
                     versionType,
                     architecture,
                     packageType);
 
-                if (!list.Any(x => x.uuid == parsed.uuid))
-                    list.Add(parsed);
+                if (!list.Any(x => x.uuid == parsedVersion.uuid))
+                    list.Add(parsedVersion);
             }
 
             SortVersions();
@@ -133,9 +147,18 @@ namespace BedrockLauncher.UpdateProcessor.Databases
 
             foreach (UpdateInfo update in updates)
             {
+                if (update == null ||
+                    string.IsNullOrWhiteSpace(update.packageMoniker) ||
+                    string.IsNullOrWhiteSpace(update.updateId))
+                {
+                    continue;
+                }
+
                 string version =
                     MinecraftVersion
-                        .ConvertVersion(update.packageMoniker, type)
+                        .ConvertVersion(
+                            update.packageMoniker,
+                            type)
                         .ToString();
 
                 string architecture =
@@ -164,20 +187,22 @@ namespace BedrockLauncher.UpdateProcessor.Databases
 
         public List<IVersionInfo> GetVersions()
         {
-            return list.Cast<IVersionInfo>().ToList();
+            return list
+                .Cast<IVersionInfo>()
+                .ToList();
         }
 
         public void ParseRaw(
             string data,
-            Dictionary<Guid, string> architectures = null)
+            Dictionary<Guid, string> architectures)
         {
             ParseJson(data, architectures);
         }
 
-        // Compatibility with the original misspelled method.
+        // Compatibility alias for older code that used the misspelled name.
         public void PraseRaw(
             string data,
-            Dictionary<Guid, string> architectures = null)
+            Dictionary<Guid, string> architectures)
         {
             ParseRaw(data, architectures);
         }
