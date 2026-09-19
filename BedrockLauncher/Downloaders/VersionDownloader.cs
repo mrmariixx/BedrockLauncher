@@ -1,7 +1,6 @@
 using BedrockLauncher.Classes;
 using System;
 using System.IO;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using BedrockLauncher.UpdateProcessor;
@@ -13,15 +12,12 @@ using BedrockLauncher.ViewModels;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using static BedrockLauncher.UpdateProcessor.Handlers.VersionManager;
 using BedrockLauncher.UpdateProcessor.Handlers;
-using System.Text.RegularExpressions;
 using BedrockLauncher.UpdateProcessor.Extensions;
 using BedrockLauncher.Enums;
 using BedrockLauncher.UpdateProcessor.Enums;
-using System.Xml.Linq;
 
 namespace BedrockLauncher.Downloaders
 {
@@ -37,61 +33,130 @@ namespace BedrockLauncher.Downloaders
         private MCVersion? latestBetaRef { get; set; }
         private MCVersion latestPreviewRef { get; set; }
 
-
-        public async Task DownloadVersion(string versionName, string packageID, int revisionNumber, string destination, DownloadProgress progress, CancellationToken cancellationToken, VersionType versionType)
+        public async Task DownloadVersion(
+            string versionName,
+            string packageID,
+            int revisionNumber,
+            string destination,
+            DownloadProgress progress,
+            CancellationToken cancellationToken,
+            VersionType versionType)
         {
-            await VersionDB.DownloadVersion(versionName, GetUpdateIdentity(packageID), revisionNumber, destination, progress, cancellationToken, versionType);
+            await VersionDB.DownloadVersion(
+                versionName,
+                GetUpdateIdentity(packageID),
+                revisionNumber,
+                destination,
+                progress,
+                cancellationToken,
+                versionType);
 
             string GetUpdateIdentity(string packageID)
             {
-                if (packageID == Constants.LATEST_BETA_UUID) return latestBetaRef.PackageID;
-                else if (packageID == Constants.LATEST_RELEASE_UUID) return latestReleaseRef.PackageID;
-                else if (packageID == Constants.LATEST_PREVIEW_UUID) return latestPreviewRef.PackageID;
-                else return packageID;
+                if (packageID == Constants.LATEST_BETA_UUID)
+                    return latestBetaRef.PackageID;
+
+                if (packageID == Constants.LATEST_RELEASE_UUID)
+                    return latestReleaseRef.PackageID;
+
+                if (packageID == Constants.LATEST_PREVIEW_UUID)
+                    return latestPreviewRef.PackageID;
+
+                return packageID;
             }
         }
-        public async Task UpdateVersionList(ObservableCollection<MCVersion> versions, bool OnLoad = false)
-        {
-            bool AllowUpdating = OnLoad && Debugger.IsAttached ? Constants.Debugging.RetriveNewVersionsOnLoad : true;
 
-            //Clear Existing Versions
+        public async Task UpdateVersionList(
+            ObservableCollection<MCVersion> versions,
+            bool OnLoad = false)
+        {
+            bool AllowUpdating =
+                OnLoad && Debugger.IsAttached
+                    ? Constants.Debugging.RetriveNewVersionsOnLoad
+                    : true;
+
             versions.Clear();
 
-            //Retrive Versions
-            int userIndex = Properties.LauncherSettings.Default.CurrentInsiderAccountIndex;
-            VersionDB.Init(userIndex, winstoreDBFile, communityDBFile, gdkLinksDBFile);
-            await VersionDB.LoadVersions(true, Properties.LauncherSettings.Default.FetchVersionsFromMicrosoftStore);
+            int userIndex =
+                Properties.LauncherSettings.Default.CurrentInsiderAccountIndex;
 
-            //Add Versions to ObservableCollection, then Sort them
+            VersionDB.Init(
+                userIndex,
+                winstoreDBFile,
+                communityDBFile,
+                gdkLinksDBFile);
+
+            await VersionDB.LoadVersions(
+                true,
+                Properties.LauncherSettings.Default.FetchVersionsFromMicrosoftStore);
+
             List<VersionInfoJson> versionList = VersionDB.GetVersions();
+
             foreach (VersionInfoJson entry in versionList)
             {
-                // Trace.WriteLine($"Found version: {entry.GetVersion()}");
-                versions.Add(new MCVersion(entry.GetUUID().ToString(), entry.GetUUID().ToString(), GetRealVersion(entry.GetVersion()), entry.GetVersionType(), entry.GetArchitecture(), entry.GetPackageType()));
+                versions.Add(new MCVersion(
+                    entry.GetUUID().ToString(),
+                    entry.GetUUID().ToString(),
+                    GetRealVersion(entry.GetVersion()),
+                    entry.GetVersionType(),
+                    entry.GetArchitecture(),
+                    entry.GetPackageType()));
             }
-                
+
             versions.Sort((x, y) => x.Compare(y));
 
+            MCVersion latestRelease = versions.First(
+                x => x.IsRelease &&
+                VersionDbExtensions.DoesVersionArchMatch(
+                    Constants.CurrentArchitecture,
+                    x.Architecture));
 
-            //Get Latest Release and Beta Versions an Insert them into the ObservableCollection
-            MCVersion latestRelease = versions.First(x => x.IsRelease == true && VersionDbExtensions.DoesVersionArchMatch(Constants.CurrentArchitecture, x.Architecture));
-            MCVersion? latestBeta = versions.FirstOrDefault(x => x.IsBeta == true && VersionDbExtensions.DoesVersionArchMatch(Constants.CurrentArchitecture, x.Architecture), null);
-            MCVersion latestPreview = versions.First(x => x.IsPreview == true && VersionDbExtensions.DoesVersionArchMatch(Constants.CurrentArchitecture, x.Architecture));
+            MCVersion? latestBeta = versions.FirstOrDefault(
+                x => x.IsBeta &&
+                VersionDbExtensions.DoesVersionArchMatch(
+                    Constants.CurrentArchitecture,
+                    x.Architecture),
+                null);
 
-            this.latestReleaseRef = latestRelease;
-            this.latestBetaRef = latestBeta;
-            this.latestPreviewRef = latestPreview;
+            MCVersion latestPreview = versions.First(
+                x => x.IsPreview &&
+                VersionDbExtensions.DoesVersionArchMatch(
+                    Constants.CurrentArchitecture,
+                    x.Architecture));
 
-            MCVersion latest_preview = new MCVersion(Constants.LATEST_PREVIEW_UUID, Constants.LATEST_PREVIEW_UUID, Application.Current.Resources["EditInstallationScreen_LatestPreview"].ToString(), latestPreview.Type, Constants.CurrentArchitecture, latestPreview.PackageType);
-            MCVersion latest_release = new MCVersion(Constants.LATEST_RELEASE_UUID, Constants.LATEST_RELEASE_UUID, Application.Current.Resources["EditInstallationScreen_LatestRelease"].ToString(), latestRelease.Type, Constants.CurrentArchitecture, latestRelease.PackageType);
+            latestReleaseRef = latestRelease;
+            latestBetaRef = latestBeta;
+            latestPreviewRef = latestPreview;
+
+            MCVersion latest_preview = new MCVersion(
+                Constants.LATEST_PREVIEW_UUID,
+                Constants.LATEST_PREVIEW_UUID,
+                Application.Current.Resources["EditInstallationScreen_LatestPreview"].ToString(),
+                latestPreview.Type,
+                Constants.CurrentArchitecture,
+                latestPreview.PackageType);
+
+            MCVersion latest_release = new MCVersion(
+                Constants.LATEST_RELEASE_UUID,
+                Constants.LATEST_RELEASE_UUID,
+                Application.Current.Resources["EditInstallationScreen_LatestRelease"].ToString(),
+                latestRelease.Type,
+                Constants.CurrentArchitecture,
+                latestRelease.PackageType);
 
             versions.Insert(0, latest_preview);
             versions.Insert(0, latest_release);
 
-            // Will only appear is user had previously loaded beta version
             if (latestBeta != null)
             {
-                MCVersion latest_beta = new MCVersion(Constants.LATEST_BETA_UUID, Constants.LATEST_BETA_UUID, Application.Current.Resources["EditInstallationScreen_LatestBeta"].ToString(), latestBeta.Type, Constants.CurrentArchitecture, latestBeta.PackageType);
+                MCVersion latest_beta = new MCVersion(
+                    Constants.LATEST_BETA_UUID,
+                    Constants.LATEST_BETA_UUID,
+                    Application.Current.Resources["EditInstallationScreen_LatestBeta"].ToString(),
+                    latestBeta.Type,
+                    Constants.CurrentArchitecture,
+                    latestBeta.PackageType);
+
                 versions.Insert(0, latest_beta);
             }
 
@@ -99,133 +164,286 @@ namespace BedrockLauncher.Downloaders
 
             string GetRealVersion(string versionS)
             {
-                if (MinecraftVersion.TryParse(versionS, out MinecraftVersion version)) return version.ToRealString();
-                else return new Version(0, 0, 0, 0).ToString();
+                if (MinecraftVersion.TryParse(
+                    versionS,
+                    out MinecraftVersion version))
+                {
+                    return version.ToRealString();
+                }
+
+                return new Version(0, 0, 0, 0).ToString();
             }
         }
-        private async Task SyncUpLocalVersions(ObservableCollection<MCVersion> versions, bool OnLoad = false)
+
+        private async Task SyncUpLocalVersions(
+            ObservableCollection<MCVersion> versions,
+            bool OnLoad = false)
         {
-            DirectoryInfo directoryInfo = Directory.CreateDirectory(MainDataModel.Default.FilePaths.VersionsFolder);
-            var webVersions = VersionDB.GetVersions();
+            DirectoryInfo directoryInfo =
+                Directory.CreateDirectory(
+                    MainDataModel.Default.FilePaths.VersionsFolder);
 
             foreach (var directory in directoryInfo.EnumerateDirectories())
             {
-                if (directory.Name.Equals("AppxBackups", StringComparison.OrdinalIgnoreCase)) continue;
+                if (directory.Name.Equals(
+                    "AppxBackups",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
 
-                string mainifest_file = Path.Combine(directory.FullName, MCVersionExtensions.MainifestFileName);
-                string exe_file = Path.Combine(directory.FullName, "Minecraft.Windows.exe");
-                string gdk_config = Path.Combine(directory.FullName, "MicrosoftGame.Config");
-                string cdn_package_file = Path.Combine(directory.FullName, "cdn_package.txt");
-                string packageId_file = Path.Combine(directory.FullName, MCVersionExtensions.IdentificationFilename);
-                string customName_file = Path.Combine(directory.FullName, "custom_name.txt");
+                string manifestFile = Path.Combine(
+                    directory.FullName,
+                    MCVersionExtensions.MainifestFileName);
+
+                string exeFile = Path.Combine(
+                    directory.FullName,
+                    "Minecraft.Windows.exe");
+
+                string gdkConfig = Path.Combine(
+                    directory.FullName,
+                    "MicrosoftGame.Config");
+
+                string cdnPackageFile = Path.Combine(
+                    directory.FullName,
+                    "cdn_package.txt");
+
+                string packageIdFile = Path.Combine(
+                    directory.FullName,
+                    MCVersionExtensions.IdentificationFilename);
+
+                string customNameFile = Path.Combine(
+                    directory.FullName,
+                    "custom_name.txt");
+
                 string uuid = directory.Name;
 
                 try
                 {
-                    bool hasManifest = File.Exists(mainifest_file);
-                    bool hasExe = File.Exists(exe_file);
-                    bool hasGdkConfig = File.Exists(gdk_config);
-                    bool hasCdnPackage = File.Exists(cdn_package_file);
+                    bool hasManifest = File.Exists(manifestFile);
+                    bool hasExe = File.Exists(exeFile);
+                    bool hasGdkConfig = File.Exists(gdkConfig);
+                    bool hasCdnPackage = File.Exists(cdnPackageFile);
 
-                    if (hasManifest || hasExe || hasGdkConfig || hasCdnPackage)
+                    if (!hasManifest &&
+                        !hasExe &&
+                        !hasGdkConfig &&
+                        !hasCdnPackage)
                     {
-                        //Legacy Version Support
-                        if (directory.Name.StartsWith("Minecraft-"))
+                        continue;
+                    }
+
+                    // Legacy Version Support
+                    if (directory.Name.StartsWith("Minecraft-"))
+                    {
+                        string legacyPkgID =
+                            directory.Name.Replace("Minecraft-", "");
+
+                        if (!File.Exists(packageIdFile))
                         {
-                            string legacyPkgID = directory.Name.Replace("Minecraft-", "");
-                            if (!File.Exists(packageId_file))
+                            if (versions.Exists(
+                                x => x.PackageID == legacyPkgID))
                             {
-                                if (versions.Exists(x => x.PackageID == legacyPkgID))
-                                    await File.WriteAllTextAsync(packageId_file, legacyPkgID);
+                                await File.WriteAllTextAsync(
+                                    packageIdFile,
+                                    legacyPkgID);
                             }
-                            directory.Rename(legacyPkgID);
-                            uuid = legacyPkgID;
                         }
 
-                        string packageID = await FileExtensions.TryReadAllTextAsync(packageId_file, uuid);
+                        directory.Rename(legacyPkgID);
+                        uuid = legacyPkgID;
+                    }
 
-                        MCVersion existing = versions.FirstOrDefault(x => x.UUID == uuid || x.PackageID == packageID || x.Name == uuid);
-                        if (existing == null)
+                    string packageID =
+                        await FileExtensions.TryReadAllTextAsync(
+                            packageIdFile,
+                            uuid);
+
+                    MCVersion existing =
+                        versions.FirstOrDefault(
+                            x => x.UUID == uuid ||
+                                 x.PackageID == packageID ||
+                                 x.Name == uuid);
+
+                    if (existing != null)
+                    {
+                        continue;
+                    }
+
+                    MCVersion customVersion = null;
+
+                    if (hasGdkConfig || hasCdnPackage)
+                    {
+                        string versionName = uuid;
+
+                        if (hasExe)
                         {
-                            MCVersion customVersion = null;
-                            if (hasGdkConfig || hasCdnPackage)
-                            {
-                                string verStr = uuid;
-                                if (hasExe)
-                                {
-                                    var fvi = FileVersionInfo.GetVersionInfo(exe_file);
-                                    verStr = fvi.ProductVersion ?? fvi.FileVersion ?? uuid;
-                                }
-                                customVersion = new MCVersion(uuid, packageID, verStr, VersionType.Release, Constants.CurrentArchitecture, PackageType.GDK);
-                            }
-                            else if (hasManifest)
-                            {
-                                customVersion = await GetAppxMaifestIdentity(packageID, uuid, mainifest_file);
-                            }
-                            else if (hasExe)
-                            {
-                                var fvi = FileVersionInfo.GetVersionInfo(exe_file);
-                                string verStr = fvi.ProductVersion ?? fvi.FileVersion ?? uuid;
-                                customVersion = new MCVersion(uuid, packageID, verStr, VersionType.Release, Constants.CurrentArchitecture, PackageType.UWP);
-                            }
+                            FileVersionInfo fileVersion =
+                                FileVersionInfo.GetVersionInfo(exeFile);
 
-                            if (customVersion != null)
-                            {
-
-                                string customNameFallback = string.Format("{0}.{1}.{2}", customVersion.Name, customVersion.Type.ToString().FirstOrDefault(), customVersion.Architecture);
-                                customVersion.CustomName = await FileExtensions.TryReadAllTextAsync(customName_file, customNameFallback);
-                                versions.Add(customVersion);
-                            }
+                            versionName =
+                                fileVersion.ProductVersion ??
+                                fileVersion.FileVersion ??
+                                uuid;
                         }
+
+                        customVersion = new MCVersion(
+                            uuid,
+                            packageID,
+                            versionName,
+                            VersionType.Release,
+                            Constants.CurrentArchitecture,
+                            PackageType.GDK);
+                    }
+                    else if (hasManifest)
+                    {
+                        customVersion =
+                            await GetAppxMaifestIdentity(
+                                packageID,
+                                uuid,
+                                manifestFile);
+                    }
+                    else if (hasExe)
+                    {
+                        FileVersionInfo fileVersion =
+                            FileVersionInfo.GetVersionInfo(exeFile);
+
+                        string versionName =
+                            fileVersion.ProductVersion ??
+                            fileVersion.FileVersion ??
+                            uuid;
+
+                        customVersion = new MCVersion(
+                            uuid,
+                            packageID,
+                            versionName,
+                            VersionType.Release,
+                            Constants.CurrentArchitecture,
+                            PackageType.UWP);
+                    }
+
+                    if (customVersion != null)
+                    {
+                        string customNameFallback =
+                            string.Format(
+                                "{0}.{1}.{2}",
+                                customVersion.Name,
+                                customVersion.Type
+                                    .ToString()
+                                    .FirstOrDefault(),
+                                customVersion.Architecture);
+
+                        customVersion.CustomName =
+                            await FileExtensions.TryReadAllTextAsync(
+                                customNameFile,
+                                customNameFallback);
+
+                        versions.Add(customVersion);
                     }
                 }
                 catch
                 {
                     // Ignore corrupted folder
                 }
-
             }
         }
-        private async Task<MCVersion> GetAppxMaifestIdentity(string PackageID, string UUID, string file)
+
+        private async Task<MCVersion> GetAppxMaifestIdentity(
+            string PackageID,
+            string UUID,
+            string file)
         {
-            var (Name, Version, ProcessorArchitecture) = await MCVersionExtensions.GetCommonPackageValuesAsync(file);
+            var (
+                Name,
+                Version,
+                ProcessorArchitecture) =
+                await MCVersionExtensions.GetCommonPackageValuesAsync(file);
 
             VersionType Type;
-            if (Name == "Microsoft.MinecraftUWP") Type = VersionType.Release;
-            else if (Name == "Microsoft.MinecraftWindowsBeta") Type = VersionType.Preview;
-            else throw new Exception("That's not a Minecraft APPX file silly!"); //TODO: Localize String
 
-            return new MCVersion(UUID, PackageID, Version, Type, ProcessorArchitecture);
+            if (Name == "Microsoft.MinecraftUWP")
+            {
+                Type = VersionType.Release;
+            }
+            else if (Name == "Microsoft.MinecraftWindowsBeta")
+            {
+                Type = VersionType.Preview;
+            }
+            else
+            {
+                throw new Exception(
+                    "That's not a Minecraft APPX file silly!");
+            }
+
+            return new MCVersion(
+                UUID,
+                PackageID,
+                Version,
+                Type,
+                ProcessorArchitecture);
         }
-        public MCVersion GetVersion(VersioningMode versioningMode, string versionUUID)
+
+        public MCVersion GetVersion(
+            VersioningMode versioningMode,
+            string versionUUID)
         {
             if (versioningMode != VersioningMode.None)
             {
-                if (versioningMode == VersioningMode.LatestPreview && latestPreviewRef != null)
+                if (versioningMode == VersioningMode.LatestPreview &&
+                    latestPreviewRef != null)
                 {
-                    MCVersion? latest_preview = MainDataModel.Default.Versions
-                        .ToList().FirstOrDefault(x => x.UUID == latestPreviewRef.UUID && x.Type == latestPreviewRef.Type, null);
+                    MCVersion? latest_preview =
+                        MainDataModel.Default.Versions
+                            .ToList()
+                            .FirstOrDefault(
+                                x => x.UUID == latestPreviewRef.UUID &&
+                                     x.Type == latestPreviewRef.Type,
+                                null);
+
                     return latest_preview;
                 }
-                if (versioningMode == VersioningMode.LatestBeta && latestBetaRef != null)
+
+                if (versioningMode == VersioningMode.LatestBeta &&
+                    latestBetaRef != null)
                 {
-                    MCVersion? latest_beta = MainDataModel.Default.Versions
-                        .ToList().FirstOrDefault(x => x.UUID == latestBetaRef.UUID && x.Type == latestBetaRef.Type, null);
+                    MCVersion? latest_beta =
+                        MainDataModel.Default.Versions
+                            .ToList()
+                            .FirstOrDefault(
+                                x => x.UUID == latestBetaRef.UUID &&
+                                     x.Type == latestBetaRef.Type,
+                                null);
+
                     return latest_beta;
                 }
-                if (versioningMode == VersioningMode.LatestRelease && latestReleaseRef != null)
+
+                if (versioningMode == VersioningMode.LatestRelease &&
+                    latestReleaseRef != null)
                 {
-                    MCVersion? latest_release = MainDataModel.Default.Versions
-                        .ToList().FirstOrDefault(x => x.UUID == latestReleaseRef.UUID && x.Type == latestReleaseRef.Type, null);
+                    MCVersion? latest_release =
+                        MainDataModel.Default.Versions
+                            .ToList()
+                            .FirstOrDefault(
+                                x => x.UUID == latestReleaseRef.UUID &&
+                                     x.Type == latestReleaseRef.Type,
+                                null);
+
                     return latest_release;
                 }
-                else return null;
+
+                return null;
             }
-            else if (MainDataModel.Default.Versions.ToList().Exists(x => x.UUID == versionUUID))
+
+            if (MainDataModel.Default.Versions
+                .ToList()
+                .Exists(x => x.UUID == versionUUID))
             {
-                return MainDataModel.Default.Versions.ToList().Where(x => x.UUID == versionUUID).FirstOrDefault();
+                return MainDataModel.Default.Versions
+                    .ToList()
+                    .FirstOrDefault(x => x.UUID == versionUUID);
             }
-            else return null;
+
+            return null;
         }
     }
 }

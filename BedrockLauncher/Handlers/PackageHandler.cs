@@ -268,6 +268,9 @@ namespace BedrockLauncher.Handlers
                     backupDirectory,
                     Path.GetFileName(packagePath));
 
+                if (File.Exists(backupPath))
+                    File.Delete(backupPath);
+
                 File.Move(packagePath, backupPath);
                 Trace.WriteLine("Extracted successfully");
                 await Task.Run(Program.OnApplicationRefresh);
@@ -357,7 +360,7 @@ namespace BedrockLauncher.Handlers
                                                                              }
                                                                              catch (InvalidOperationException e)
                                                                              {
-                                                                                 throw e;
+                                                                                 throw;
                                                                              }
                                                                              catch (Exception e)
                                                                              {
@@ -434,7 +437,7 @@ namespace BedrockLauncher.Handlers
             catch (PackageManagerException e)
             {
                 ResetTask();
-                throw e;
+                throw;
             }
             catch (Exception ex)
             {
@@ -462,7 +465,7 @@ namespace BedrockLauncher.Handlers
             catch (PackageManagerException e)
             {
                 ResetTask();
-                throw e;
+                throw;
             }
             catch (TaskCanceledException e)
             {
@@ -484,24 +487,43 @@ namespace BedrockLauncher.Handlers
             try
             {
                 Trace.WriteLine($"Registering package ({v.PackageType}): {v.Name}");
-                MainDataModel.Default.ProgressBarState.SetProgressBarState(LauncherState.isRegisteringPackage);
+                MainDataModel.Default.ProgressBarState
+                    .SetProgressBarState(LauncherState.isRegisteringPackage);
 
                 if (v.PackageType == PackageType.GDK)
                 {
-                    string packageFile = FindPackageFromMarker(v)
+                    string packageFile =
+                        FindPackageFromMarker(v)
                         ?? FindSignedPackageBackup(v);
 
-                    if (string.IsNullOrEmpty(packageFile))
-                        throw new FileNotFoundException($"Pacchetto GDK firmato non trovato per {v.Name}");
+                    if (string.IsNullOrWhiteSpace(packageFile) ||
+                        !File.Exists(packageFile))
+                    {
+                        throw new FileNotFoundException(
+                            $"Signed GDK package not found for {v.Name}.");
+                    }
 
-                    MainDataModel.Default.ProgressBarState.SetProgressBarText(Path.GetFileName(packageFile));
-                    Trace.WriteLine("Staging signed GDK package via AddPackageAsync: " + packageFile);
-                    await DeploymentProgressWrapper(PM.AddPackageAsync(new Uri(packageFile), null, Constants.StorePackageDeploymentOptions));
-                    Trace.WriteLine("App re-register done!");
+                    MainDataModel.Default.ProgressBarState
+                        .SetProgressBarText(Path.GetFileName(packageFile));
+
+                    Trace.WriteLine(
+                        "Registering signed GDK package: " +
+                        packageFile);
+
+                    await DeploymentProgressWrapper(
+                        PM.AddPackageAsync(
+                            new Uri(packageFile),
+                            null,
+                            Constants.StorePackageDeploymentOptions));
+
                     return;
                 }
 
-                if (!File.Exists(v.ManifestPath) && File.Exists(Path.Combine(v.GameDirectory, "MicrosoftGame.Config")))
+                if (!File.Exists(v.ManifestPath) &&
+                    File.Exists(
+                        Path.Combine(
+                            v.GameDirectory,
+                            "MicrosoftGame.Config")))
                 {
                     EnsureWDAppManifest(v.GameDirectory, v.Type);
                 }
@@ -509,23 +531,38 @@ namespace BedrockLauncher.Handlers
                 if (File.Exists(v.ManifestPath))
                 {
                     if (!FixGDKManifest(v.ManifestPath, v.Type))
-                        throw new IOException($"Could not patch manifest at {v.ManifestPath} (it may be read-only or locked by another process). Registration aborted to avoid installing with an unpatched manifest.");
+                    {
+                        throw new IOException(
+                            $"Could not patch manifest at {v.ManifestPath} " +
+                            "(it may be read-only or locked by another process). " +
+                            "Registration aborted to avoid installing with an unpatched manifest.");
+                    }
 
-                    MainDataModel.Default.ProgressBarState.SetProgressBarText(v.GetPackageNameFromMainifest());
-                    Trace.WriteLine("Registering loose package from manifest (DevelopmentMode): " + v.ManifestPath);
-                    await DeploymentProgressWrapper(PM.RegisterPackageAsync(new Uri(v.ManifestPath), null, Constants.PackageDeploymentOptions));
+                    MainDataModel.Default.ProgressBarState
+                        .SetProgressBarText(
+                            v.GetPackageNameFromMainifest());
+
+                    Trace.WriteLine(
+                        "Registering loose package from manifest (DevelopmentMode): " +
+                        v.ManifestPath);
+
+                    await DeploymentProgressWrapper(
+                        PM.RegisterPackageAsync(
+                            new Uri(v.ManifestPath),
+                            null,
+                            Constants.PackageDeploymentOptions));
                 }
                 else
                 {
-                    throw new FileNotFoundException($"Cannot register package {v.Name}: manifest not found at {v.ManifestPath}");
+                    throw new FileNotFoundException(
+                        $"Cannot register package {v.Name}: " +
+                        $"manifest not found at {v.ManifestPath}");
                 }
-
-                Trace.WriteLine("App re-register done!");
             }
-            catch (PackageManagerException e)
+            catch (PackageManagerException)
             {
                 ResetTask();
-                throw e;
+                throw;
             }
             catch (Exception e)
             {
@@ -536,7 +573,6 @@ namespace BedrockLauncher.Handlers
             {
                 ResetTask();
             }
-
         }
 
         private static string FindPackageFromMarker(MCVersion v)
@@ -548,7 +584,11 @@ namespace BedrockLauncher.Handlers
             if (!File.Exists(markerPath))
                 return null;
 
-            string packagePath = File.ReadAllText(markerPath).Trim();
+            string packagePath =
+                File.ReadAllText(markerPath).Trim();
+
+            if (string.IsNullOrWhiteSpace(packagePath))
+                return null;
 
             return File.Exists(packagePath)
                 ? packagePath
@@ -557,25 +597,22 @@ namespace BedrockLauncher.Handlers
 
         private static string FindSignedPackageBackup(MCVersion v)
         {
-            string subDirectory = Path.Combine(MainDataModel.Default.FilePaths.VersionsFolder, "AppxBackups");
+            string backupDirectory = Path.Combine(
+                MainDataModel.Default.FilePaths.VersionsFolder,
+                "AppxBackups");
+
+            string filePrefix = "Minecraft-" + v.Name;
+
             string[] candidates =
             {
-                Path.Combine(subDirectory, "Minecraft-" + v.Name + ".msixvc"),
-                Path.Combine(subDirectory, "Minecraft-" + v.Name + ".msixbundle"),
-                Path.Combine(subDirectory, "Minecraft-" + v.Name + ".msix"),
-                Path.Combine(subDirectory, "Minecraft-" + v.Name + ".package"),
-                Path.Combine(subDirectory, "Minecraft-" + v.Name + ".Appx"),
-                Path.Combine(subDirectory, "Minecraft-" + v.Name + ".appx"),
-            
-                Path.Combine(Directory.GetCurrentDirectory(),
-                    "Minecraft-" + v.Name + ".msixvc"),
-                Path.Combine(Directory.GetCurrentDirectory(),
-                    "Minecraft-" + v.Name + ".msixbundle"),
-                Path.Combine(Directory.GetCurrentDirectory(),
-                    "Minecraft-" + v.Name + ".msix"),
-                Path.Combine(Directory.GetCurrentDirectory(),
-                    "Minecraft-" + v.Name + ".package")
+                Path.Combine(backupDirectory, filePrefix + ".msixvc"),
+                Path.Combine(backupDirectory, filePrefix + ".msixbundle"),
+                Path.Combine(backupDirectory, filePrefix + ".msix"),
+                Path.Combine(backupDirectory, filePrefix + ".package"),
+                Path.Combine(backupDirectory, filePrefix + ".Appx"),
+                Path.Combine(backupDirectory, filePrefix + ".appx")
             };
+
             return candidates.FirstOrDefault(File.Exists);
         }
 
@@ -818,7 +855,7 @@ namespace BedrockLauncher.Handlers
             catch (PackageManagerException e)
             {
                 ResetTask();
-                throw e;
+                throw;
             }
             catch (TaskCanceledException e)
             {
@@ -837,37 +874,73 @@ namespace BedrockLauncher.Handlers
                 ResetTask();
             }
         }
-        private async Task UnregisterPackage(MCVersion v, bool keepVersion = false, bool mustMatchVersion = false)
+        private async Task UnregisterPackage(
+            MCVersion v,
+            bool keepVersion = false,
+            bool mustMatchVersion = false)
         {
             try
             {
-                foreach (var pkg in PM.FindPackagesForUser(string.Empty))
+                string[] minecraftFamilies =
                 {
-                    string location;
+                    Constants.GetPackageFamily(VersionType.Release),
+                    Constants.GetPackageFamily(VersionType.Preview)
+                };
 
-                    try { location = pkg.InstalledLocation.Path; }
-                    catch (FileNotFoundException) { location = string.Empty; }
-
-                    if (location == v.GameDirectory && keepVersion)
+                foreach (string family in minecraftFamilies)
+                {
+                    foreach (var package in PM.FindPackagesForUser(
+                        string.Empty,
+                        family))
                     {
-                        Trace.WriteLine("Skipping package removal - same path: " + pkg.Id.FullName + " " + location);
-                        continue;
+                        string location = string.Empty;
+
+                        try
+                        {
+                            location =
+                                package.InstalledLocation?.Path
+                                ?? string.Empty;
+                        }
+                        catch
+                        {
+                            // The package location may be inaccessible.
+                        }
+
+                        bool sameLocation =
+                            !string.IsNullOrWhiteSpace(location) &&
+                            string.Equals(
+                                Path.GetFullPath(location),
+                                Path.GetFullPath(v.GameDirectory),
+                                StringComparison.OrdinalIgnoreCase);
+
+                        if (keepVersion && sameLocation)
+                            continue;
+
+                        if (mustMatchVersion && !sameLocation)
+                            continue;
+
+                        Trace.WriteLine(
+                            "Removing Minecraft package: " +
+                            package.Id.FullName);
+
+                        MainDataModel.Default.ProgressBarState
+                            .SetProgressBarText(package.Id.FullName);
+
+                        MainDataModel.Default.ProgressBarState
+                            .SetProgressBarState(
+                                LauncherState.isRemovingPackage);
+
+                        await DeploymentProgressWrapper(
+                            PM.RemovePackageAsync(
+                                package.Id.FullName,
+                                Constants.PackageRemovalOptions));
                     }
-
-                    if (location != v.GameDirectory && mustMatchVersion) continue;
-
-                    Trace.WriteLine("Removing package: " + pkg.Id.FullName);
-
-                    MainDataModel.Default.ProgressBarState.SetProgressBarText(pkg.Id.FullName);
-                    MainDataModel.Default.ProgressBarState.SetProgressBarState(LauncherState.isRemovingPackage);
-                    await DeploymentProgressWrapper(PM.RemovePackageAsync(pkg.Id.FullName, Constants.PackageRemovalOptions));
-                    Trace.WriteLine("Removal of package done: " + pkg.Id.FullName);
                 }
             }
-            catch (PackageManagerException e)
+            catch (PackageManagerException)
             {
                 ResetTask();
-                throw e;
+                throw;
             }
             catch (Exception ex)
             {
@@ -938,7 +1011,7 @@ namespace BedrockLauncher.Handlers
                                                                                                               }
                                                                                                               catch (PackageManagerException e)
                                                                                                               {
-                                                                                                                  throw e;
+                                                                                                                  throw;
                                                                                                               }
                                                                                                               catch (Exception e)
                                                                                                               {

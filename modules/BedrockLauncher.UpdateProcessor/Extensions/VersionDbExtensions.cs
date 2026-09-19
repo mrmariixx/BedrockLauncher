@@ -1,48 +1,64 @@
+using BedrockLauncher.UpdateProcessor.Enums;
 using System;
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
-using BedrockLauncher.UpdateProcessor.Enums;
 
 namespace BedrockLauncher.UpdateProcessor.Extensions
 {
-    public class VersionDbExtensions
+    public static class VersionDbExtensions
     {
-        // Cache compiled regexes by VersionType to avoid repeated recompilation.
-        private static readonly ConcurrentDictionary<VersionType, Regex> _regexCache
-            = new ConcurrentDictionary<VersionType, Regex>();
+        private static readonly ConcurrentDictionary<VersionType, Regex>
+            RegexCache = new ConcurrentDictionary<VersionType, Regex>();
+
+        public const string FallbackArch = "???";
 
         public static Regex GetRegex(VersionType type)
         {
-            return _regexCache.GetOrAdd(type, t =>
-            {
-                var id = t == VersionType.Preview
+            return RegexCache.GetOrAdd(type, CreateRegex);
+        }
+
+        private static Regex CreateRegex(VersionType type)
+        {
+            string packageName =
+                type == VersionType.Preview
                     ? @"Microsoft\.MinecraftWindowsBeta_"
                     : @"Microsoft\.MinecraftUWP_";
-                return new Regex(
-                    @$"({id}([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)_(.*)__8wekyb3d8bbwe.*)",
-                    RegexOptions.CultureInvariant,
-                    TimeSpan.FromSeconds(1));
-            });
+
+            return new Regex(
+                @$"({packageName}" +
+                @"([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)_" +
+                @"(.*)__8wekyb3d8bbwe.*)",
+                RegexOptions.CultureInvariant,
+                TimeSpan.FromSeconds(1));
         }
 
-        public static string FallbackArch => "???";
-
-        public static string GetVersionArch(string packageMoniker, VersionType versionType)
+        public static string GetVersionArch(
+            string packageMoniker,
+            VersionType versionType)
         {
-            Regex regex = GetRegex(versionType);
-            Match match = regex.Match(packageMoniker);
-            // Fix: Regex.Match() never returns null — check Success instead.
-            if (!match.Success) return FallbackArch;
-            string arch = match.Groups[6].Value;
-            return string.IsNullOrEmpty(arch) ? FallbackArch : arch;
+            if (string.IsNullOrWhiteSpace(packageMoniker))
+                return FallbackArch;
+
+            Match match = GetRegex(versionType).Match(packageMoniker);
+
+            if (!match.Success)
+                return FallbackArch;
+
+            string architecture = match.Groups[6].Value;
+
+            return string.IsNullOrWhiteSpace(architecture)
+                ? FallbackArch
+                : architecture;
         }
 
-        /// <summary>
-        /// Returns true if the two architecture strings are equivalent (case-insensitive).
-        /// </summary>
-        public static bool DoesVersionArchMatch(string sourceArch, string targetArch)
+        public static bool DoesVersionArchMatch(
+            string sourceArch,
+            string targetArch)
         {
-            return string.Equals(sourceArch, targetArch, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(
+                sourceArch,
+                targetArch,
+                StringComparison.OrdinalIgnoreCase);
         }
     }
 }

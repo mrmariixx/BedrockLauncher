@@ -1,24 +1,20 @@
+using BedrockLauncher.UpdateProcessor.Classes;
+using BedrockLauncher.UpdateProcessor.Enums;
+using BedrockLauncher.UpdateProcessor.Extensions;
+using BedrockLauncher.UpdateProcessor.Interfaces;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using BedrockLauncher.UpdateProcessor.Classes;
-using BedrockLauncher.UpdateProcessor.Extensions;
-using BedrockLauncher.UpdateProcessor.Interfaces;
-using BedrockLauncher.UpdateProcessor.Enums;
 
 namespace BedrockLauncher.UpdateProcessor.Databases
 {
-    /// <summary>
-    /// A version database backed by a JSON array-of-arrays file.
-    /// Format per entry: ["version", "uuid", typeInt, "architecture"]
-    /// </summary>
     public class VersionJsonDb : IVersionDb
     {
-        public List<VersionInfoJson> list { get; private set; } = new List<VersionInfoJson>();
+        public List<VersionInfoJson> list { get; private set; } =
+            new List<VersionInfoJson>();
 
         private void SortVersions()
         {
@@ -26,107 +22,164 @@ namespace BedrockLauncher.UpdateProcessor.Databases
             list.Reverse();
         }
 
-        #region Read / Write
-
-        public void ReadJson(string filePath, Dictionary<Guid, string> architectures = null)
+        public void ReadJson(
+            string filePath,
+            Dictionary<Guid, string> architectures = null)
         {
-            using var reader = File.OpenText(filePath);
-            ParseJson(reader.ReadToEnd(), architectures);
+            if (!File.Exists(filePath))
+            {
+                list.Clear();
+                return;
+            }
+
+            string data = File.ReadAllText(filePath);
+            ParseJson(data, architectures);
         }
 
-        /// <summary>
-        /// Writes the database to <paramref name="filePath"/> using indented JSON (pretty-print).
-        /// </summary>
         public void WriteJson(string filePath)
         {
             SortVersions();
-            var valuesList = JArray.FromObject(list).Select(x => x.Values().ToList()).ToList();
-            string json = JsonConvert.SerializeObject(valuesList, Formatting.Indented);
+
+            var valuesList = list
+                .Select(version => new JArray(
+                    version.version,
+                    version.uuid.ToString(),
+                    (int)version.type,
+                    version.architecture,
+                    (int)version.packageType))
+                .ToList();
+
+            string json = JsonConvert.SerializeObject(
+                valuesList,
+                Formatting.Indented);
+
+            Directory.CreateDirectory(
+                Path.GetDirectoryName(filePath) ?? ".");
+
             File.WriteAllText(filePath, json);
         }
 
-        /// <summary>Parses a JSON string into the version list.</summary>
-        public void ParseJson(string json, Dictionary<Guid, string> architectures = null)
+        public void ParseJson(
+            string json,
+            Dictionary<Guid, string> architectures = null)
         {
+            list.Clear();
+
+            if (string.IsNullOrWhiteSpace(json))
+                return;
+
             JArray data = JArray.Parse(json);
-            // Reverse so that the most-recent entries (appended last) end up sorted correctly.
-            var entries = data.ToList();
-            entries.Reverse();
 
-            foreach (JArray o in entries)
+            foreach (JArray item in data)
             {
-                string name = o[0].Value<string>();
-                string uuid = o[1].Value<string>();
-                int    type = o[2].Value<int>();
-                string arch = o.Count >= 4 ? o[3].Value<string>() : VersionDbExtensions.FallbackArch;
-                PackageType pkgType = o.Count >= 5 ? (PackageType)o[4].Value<int>() : PackageType.UWP;
+                if (item.Count < 3)
+                    continue;
 
-                var v = new VersionInfoJson(name, uuid, (VersionType)type, arch, pkgType);
+                string version = item[0]?.Value<string>();
+                string uuid = item[1]?.Value<string>();
+                int typeValue = item[2]?.Value<int>() ?? 0;
 
-                // Resolve unknown architecture from the caller-supplied dictionary.
-                if (arch == VersionDbExtensions.FallbackArch && architectures != null)
+                if (string.IsNullOrWhiteSpace(version) ||
+                    string.IsNullOrWhiteSpace(uuid))
                 {
-                    if (architectures.TryGetValue(v.uuid, out string resolvedArch))
-                        v = new VersionInfoJson(name, uuid, (VersionType)type, resolvedArch, pkgType);
+                    continue;
                 }
 
-                if (!list.Exists(x => x.uuid == v.uuid))
-                    list.Add(v);
+                VersionType versionType = (VersionType)typeValue;
+
+                string architecture =
+                    item.Count >= 4
+                        ? item[3]?.Value<string>()
+                        : VersionDbExtensions.FallbackArch;
+
+                PackageType packageType =
+                    item.Count >= 5
+                        ? (PackageType)(item[4]?.Value<int>() ?? 0)
+                        : PackageType.UWP;
+
+                if (string.IsNullOrWhiteSpace(architecture))
+                    architecture = VersionDbExtensions.FallbackArch;
+
+                if (architecture == VersionDbExtensions.FallbackArch &&
+                    architectures != null &&
+                    Guid.TryParse(uuid, out Guid parsedUuid) &&
+                    architectures.TryGetValue(
+                        parsedUuid,
+                        out string knownArchitecture))
+                {
+                    architecture = knownArchitecture;
+                }
+
+                var parsed = new VersionInfoJson(
+                    version,
+                    uuid,
+                    versionType,
+                    architecture,
+                    packageType);
+
+                if (!list.Any(x => x.uuid == parsed.uuid))
+                    list.Add(parsed);
             }
 
             SortVersions();
         }
 
-        #endregion
-
-        #region IVersionDb Implementation
-
-        public void AddVersion(List<UpdateInfo> updates, VersionType type)
+        public void AddVersion(
+            List<UpdateInfo> updates,
+            VersionType type)
         {
-            if (updates == null || updates.Count == 0) return;
+            if (updates == null || updates.Count == 0)
+                return;
 
-            foreach (var u in updates)
+            foreach (UpdateInfo update in updates)
             {
-                string version = MinecraftVersion.ConvertVersion(u.packageMoniker, type).ToString();
-                string arch    = VersionDbExtensions.GetVersionArch(u.packageMoniker, type);
-                var    info    = new VersionInfoJson(version, u.updateId, type, arch, PackageType.UWP);
+                string version =
+                    MinecraftVersion
+                        .ConvertVersion(update.packageMoniker, type)
+                        .ToString();
 
-                if (!list.Exists(x => x.uuid == info.uuid))
+                string architecture =
+                    VersionDbExtensions.GetVersionArch(
+                        update.packageMoniker,
+                        type);
+
+                var info = new VersionInfoJson(
+                    version,
+                    update.updateId,
+                    type,
+                    architecture,
+                    PackageType.UWP);
+
+                if (!list.Any(x => x.uuid == info.uuid))
                     list.Add(info);
             }
+
+            SortVersions();
         }
 
-        /// <summary>
-        /// Saves the database using the compact array-of-arrays format.
-        /// </summary>
         public void Save(string filePath)
         {
-            SortVersions();
-            var sb = new StringBuilder();
-            sb.Append('[');
-
-            for (int i = 0; i < list.Count; i++)
-            {
-                var ver = list[i];
-                sb.Append($"[\"{ver.version}\", \"{ver.uuid}\", {(int)ver.type}, \"{ver.architecture}\", {(int)ver.packageType}]");
-                if (i < list.Count - 1)
-                    sb.Append(',').AppendLine();
-            }
-
-            sb.Append(']');
-            File.WriteAllText(filePath, sb.ToString());
+            WriteJson(filePath);
         }
 
-        public List<IVersionInfo> GetVersions() => list.Cast<IVersionInfo>().ToList();
+        public List<IVersionInfo> GetVersions()
+        {
+            return list.Cast<IVersionInfo>().ToList();
+        }
 
-        /// <inheritdoc/>
         public void ParseRaw(
             string data,
-            Dictionary<Guid, string> architectures)
+            Dictionary<Guid, string> architectures = null)
         {
             ParseJson(data, architectures);
         }
 
-        #endregion
+        // Compatibility with the original misspelled method.
+        public void PraseRaw(
+            string data,
+            Dictionary<Guid, string> architectures = null)
+        {
+            ParseRaw(data, architectures);
+        }
     }
 }

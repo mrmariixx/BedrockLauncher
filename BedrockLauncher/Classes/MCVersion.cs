@@ -34,7 +34,8 @@ namespace BedrockLauncher.Classes
 
         public MCVersion(string name)
         {
-            this.Name = name;
+            Name = name;
+            PackageType = PackageType.UWP;
         }
 
         public string UUID { get; set; }
