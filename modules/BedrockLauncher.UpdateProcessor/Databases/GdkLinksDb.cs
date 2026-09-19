@@ -101,7 +101,7 @@ namespace BedrockLauncher.UpdateProcessor.Databases
             if (urlList.Count == 0) return;
 
             // Expand with all CDN mirrors so the downloader can fall back automatically.
-            urlList = ExpandWithMirrors(urlList);
+            // urlList = ExpandWithMirrors(urlList);
 
             string architecture = !string.IsNullOrEmpty(architectureHint) 
                 ? architectureHint 

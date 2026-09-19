@@ -66,10 +66,31 @@ namespace BedrockLauncher.Handlers
                 // 2. Launch registered development package directly via AppDiagnosticInfo (the correct UWP/GDK launch method)
                 try
                 {
-                    var pkgList = await AppDiagnosticInfo.RequestInfoForPackageAsync(Constants.GetPackageFamily(v.Type));
+                    string registeredFamily = Constants.GetPackageFamily(v.Type);
+                    foreach (var package in PM.FindPackagesForUser(string.Empty))
+                    {
+                        try
+                        {
+                            if (string.Equals(
+                                Path.GetFullPath(package.InstalledLocation.Path),
+                                Path.GetFullPath(v.GameDirectory),
+                                StringComparison.OrdinalIgnoreCase))
+                            {
+                                registeredFamily = package.Id.FamilyName;
+                                Trace.WriteLine($"Registered package family: {registeredFamily}");
+                                break;
+                            }
+                        }
+                        catch
+                        {
+                            // Ignore inaccessible packages.
+                        }
+                    }
+
+                    var pkgList = await AppDiagnosticInfo.RequestInfoForPackageAsync(registeredFamily);
                     if (pkgList != null && pkgList.Count > 0)
                     {
-                        Trace.WriteLine($"Launching registered package {Constants.GetPackageFamily(v.Type)} from {v.GameDirectory}");
+                        Trace.WriteLine($"Launching registered package {registeredFamily} from {v.GameDirectory}");
                         var activationResult = await pkgList[0].LaunchAsync();
                         if (activationResult.ExtendedError != null)
                         {
@@ -237,7 +258,17 @@ namespace BedrockLauncher.Handlers
                 await Task.Run(() => new ZipArchive(fileStream).ExtractToDirectory(outputDirectoryPath, progress, CancelSource));
                 fileStream.Close();
                 File.Delete(Path.Combine(outputDirectoryPath, "AppxSignature.p7x"));
-                File.Move(packagePath, Path.Combine(MainDataModel.Default.FilePaths.VersionsFolder, "AppxBackups", packagePath));
+                string backupDirectory = Path.Combine(
+                    MainDataModel.Default.FilePaths.VersionsFolder,
+                    "AppxBackups");
+
+                Directory.CreateDirectory(backupDirectory);
+
+                string backupPath = Path.Combine(
+                    backupDirectory,
+                    Path.GetFileName(packagePath));
+
+                File.Move(packagePath, backupPath);
                 Trace.WriteLine("Extracted successfully");
                 await Task.Run(Program.OnApplicationRefresh);
                 foreach (var ver in MainDataModel.Default.Versions) ver.UpdateFolderSize();
@@ -457,7 +488,8 @@ namespace BedrockLauncher.Handlers
 
                 if (v.PackageType == PackageType.GDK)
                 {
-                    string packageFile = FindSignedPackageBackup(v);
+                    string packageFile = FindPackageFromMarker(v)
+                        ?? FindSignedPackageBackup(v);
 
                     if (string.IsNullOrEmpty(packageFile))
                         throw new FileNotFoundException($"Pacchetto GDK firmato non trovato per {v.Name}");
@@ -507,16 +539,42 @@ namespace BedrockLauncher.Handlers
 
         }
 
+        private static string FindPackageFromMarker(MCVersion v)
+        {
+            string markerPath = Path.Combine(
+                v.GameDirectory,
+                "cdn_package.txt");
+
+            if (!File.Exists(markerPath))
+                return null;
+
+            string packagePath = File.ReadAllText(markerPath).Trim();
+
+            return File.Exists(packagePath)
+                ? packagePath
+                : null;
+        }
+
         private static string FindSignedPackageBackup(MCVersion v)
         {
             string subDirectory = Path.Combine(MainDataModel.Default.FilePaths.VersionsFolder, "AppxBackups");
             string[] candidates =
             {
                 Path.Combine(subDirectory, "Minecraft-" + v.Name + ".msixvc"),
+                Path.Combine(subDirectory, "Minecraft-" + v.Name + ".msixbundle"),
+                Path.Combine(subDirectory, "Minecraft-" + v.Name + ".msix"),
+                Path.Combine(subDirectory, "Minecraft-" + v.Name + ".package"),
                 Path.Combine(subDirectory, "Minecraft-" + v.Name + ".Appx"),
-                Path.Combine(subDirectory, "Minecraft-" + v.Name + ".Msix"),
-                Path.Combine(Directory.GetCurrentDirectory(), "Minecraft-" + v.Name + ".msixvc"),
-                Path.Combine(Directory.GetCurrentDirectory(), "Minecraft-" + v.Name + ".Appx")
+                Path.Combine(subDirectory, "Minecraft-" + v.Name + ".appx"),
+            
+                Path.Combine(Directory.GetCurrentDirectory(),
+                    "Minecraft-" + v.Name + ".msixvc"),
+                Path.Combine(Directory.GetCurrentDirectory(),
+                    "Minecraft-" + v.Name + ".msixbundle"),
+                Path.Combine(Directory.GetCurrentDirectory(),
+                    "Minecraft-" + v.Name + ".msix"),
+                Path.Combine(Directory.GetCurrentDirectory(),
+                    "Minecraft-" + v.Name + ".package")
             };
             return candidates.FirstOrDefault(File.Exists);
         }
@@ -783,7 +841,7 @@ namespace BedrockLauncher.Handlers
         {
             try
             {
-                foreach (var pkg in PM.FindPackagesForUser(string.Empty, Constants.GetPackageFamily(v.Type)))
+                foreach (var pkg in PM.FindPackagesForUser(string.Empty))
                 {
                     string location;
 
@@ -891,7 +949,7 @@ namespace BedrockLauncher.Handlers
         {
             try
             {
-                var packages = PM.FindPackagesForUser(string.Empty, Constants.GetPackageFamily(v.Type));
+                var packages = PM.FindPackagesForUser(string.Empty);
                 foreach (var pkg in packages)
                 {
                     string location = string.Empty;
@@ -932,7 +990,7 @@ namespace BedrockLauncher.Handlers
                                                                                           }
 
                                                                                           string sourcePath = null;
-                                                                                          var packages = PM.FindPackagesForUser(string.Empty, Constants.GetPackageFamily(v.Type));
+                                                                                          var packages = PM.FindPackagesForUser(string.Empty);
                                                                                           foreach (var pkg in packages)
                                                                                           {
                                                                                               try

@@ -148,11 +148,7 @@ namespace BedrockLauncher.Downloaders
                         if (existing == null)
                         {
                             MCVersion customVersion = null;
-                            if (hasManifest)
-                            {
-                                customVersion = await GetAppxMaifestIdentity(packageID, uuid, mainifest_file);
-                            }
-                            else if (hasExe || hasGdkConfig || hasCdnPackage)
+                            if (hasGdkConfig || hasCdnPackage)
                             {
                                 string verStr = uuid;
                                 if (hasExe)
@@ -160,15 +156,21 @@ namespace BedrockLauncher.Downloaders
                                     var fvi = FileVersionInfo.GetVersionInfo(exe_file);
                                     verStr = fvi.ProductVersion ?? fvi.FileVersion ?? uuid;
                                 }
+                                customVersion = new MCVersion(uuid, packageID, verStr, VersionType.Release, Constants.CurrentArchitecture, PackageType.GDK);
+                            }
+                            else if (hasManifest)
+                            {
+                                customVersion = await GetAppxMaifestIdentity(packageID, uuid, mainifest_file);
+                            }
+                            else if (hasExe)
+                            {
+                                var fvi = FileVersionInfo.GetVersionInfo(exe_file);
+                                string verStr = fvi.ProductVersion ?? fvi.FileVersion ?? uuid;
                                 customVersion = new MCVersion(uuid, packageID, verStr, VersionType.Release, Constants.CurrentArchitecture, PackageType.UWP);
                             }
 
                             if (customVersion != null)
                             {
-                                if (hasGdkConfig || hasCdnPackage)
-                                    customVersion.PackageType = PackageType.GDK;
-                                else
-                                    customVersion.PackageType = PackageType.UWP;
 
                                 string customNameFallback = string.Format("{0}.{1}.{2}", customVersion.Name, customVersion.Type.ToString().FirstOrDefault(), customVersion.Architecture);
                                 customVersion.CustomName = await FileExtensions.TryReadAllTextAsync(customName_file, customNameFallback);

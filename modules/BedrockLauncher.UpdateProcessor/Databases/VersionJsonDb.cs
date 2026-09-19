@@ -120,11 +120,12 @@ namespace BedrockLauncher.UpdateProcessor.Databases
         public List<IVersionInfo> GetVersions() => list.Cast<IVersionInfo>().ToList();
 
         /// <inheritdoc/>
-        public void ParseRaw(string data, Dictionary<Guid, string> architectures) => ParseJson(data, architectures);
-
-        /// <inheritdoc/>
-        [Obsolete("Use ParseRaw (fixed spelling).")]
-        public void ParseRaw(string data, Dictionary<Guid, string> architectures) => ParseRaw(data, architectures);
+        public void ParseRaw(
+            string data,
+            Dictionary<Guid, string> architectures)
+        {
+            ParseJson(data, architectures);
+        }
 
         #endregion
     }

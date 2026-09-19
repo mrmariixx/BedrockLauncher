@@ -44,10 +44,5 @@ namespace BedrockLauncher.UpdateProcessor.Extensions
         {
             return string.Equals(sourceArch, targetArch, StringComparison.OrdinalIgnoreCase);
         }
-
-        // Keep the old name as a deprecated alias so existing call-sites don't break.
-        [Obsolete("Use DoesVersionArchMatch (fixed spelling).")]
-        public static bool DoesVersionArchMatch(string sourceArch, string targetArch)
-            => DoesVersionArchMatch(sourceArch, targetArch);
     }
 }

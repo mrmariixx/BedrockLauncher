@@ -172,6 +172,9 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
         {
             string temporaryPath = destination + ".download";
 
+            if (File.Exists(temporaryPath))
+                File.Delete(temporaryPath);
+
             try
             {
                 using var resp = await HttpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -327,7 +330,8 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
                     Versions.RemoveAll(x =>
                         x.GetVersion() == version.GetVersion() &&
                         x.GetArchitecture() == version.GetArchitecture() &&
-                        x.GetVersionType() == version.GetVersionType());
+                        x.GetVersionType() == version.GetVersionType() &&
+                        x.GetPackageType() == version.GetPackageType());
 
                     Versions.Add(version);
                     added++;
@@ -432,7 +436,9 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
                 if (Versions.Exists(x => x.GetUUID() == version.GetUUID())) continue;
                 if (Versions.Exists(x =>
                         x.GetVersion() == version.GetVersion() &&
-                        x.GetArchitecture() == version.GetArchitecture())) continue;
+                        x.GetArchitecture() == version.GetArchitecture() &&
+                        x.GetVersionType() == version.GetVersionType() &&
+                        x.GetPackageType() == version.GetPackageType())) continue;
                 Versions.Add(version);
             }
         }
