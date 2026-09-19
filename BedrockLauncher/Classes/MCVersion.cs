@@ -22,14 +22,14 @@ namespace BedrockLauncher.Classes
     [NotifyPropertyChanged(ExcludeExplicitProperties = Constants.Debugging.ExcludeExplicitProperties)]
     public class MCVersion
     {
-        public MCVersion(string uuid, string pkgId, string name, VersionType type, string architecture)
+        public MCVersion(string uuid, string pkgId, string name, VersionType type, string architecture, PackageType packageType = PackageType.UWP)
         {
             this.UUID = uuid;
             this.PackageID = pkgId;
             this.Name = name;
             this.Type = type;
             this.Architecture = architecture;
-            this.PackageType = this.Compare(Constants.GetMinimumGDKVersion()) <= 0 ? PackageType.GDK : PackageType.UWP;
+            this.PackageType = packageType;
         }
 
         public MCVersion(string name)
@@ -137,7 +137,7 @@ namespace BedrockLauncher.Classes
                 string _ArchSuffix = string.Empty;
                 string _PkgSuffix = string.Format(" [{0}]", PackageType);
 
-                if (!VersionDbExtensions.DoesVerionArchMatch(Constants.CurrentArchitecture, Architecture))
+                if (!VersionDbExtensions.DoesVersionArchMatch(Constants.CurrentArchitecture, Architecture))
                     _ArchSuffix = $" [{Architecture}]";
 
                 switch (Type)

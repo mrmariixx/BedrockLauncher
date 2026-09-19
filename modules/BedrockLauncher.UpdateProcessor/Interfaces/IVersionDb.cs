@@ -1,15 +1,18 @@
-﻿using BedrockLauncher.UpdateProcessor.Classes;
 using BedrockLauncher.UpdateProcessor.Enums;
-using System;
-using System.Collections.Generic;
+using BedrockLauncher.UpdateProcessor.Interfaces;
 
 namespace BedrockLauncher.UpdateProcessor.Interfaces
 {
     public interface IVersionDb
     {
-        void AddVersion(List<UpdateInfo> u, VersionType type);
-        void Save(string winstoreDBFile);
-        List<IVersionInfo> GetVersions();
-        void PraseRaw(string data, Dictionary<Guid, string> architectures);
+        void AddVersion(System.Collections.Generic.List<BedrockLauncher.UpdateProcessor.Classes.UpdateInfo> u, VersionType type);
+        void Save(string filePath);
+        System.Collections.Generic.List<IVersionInfo> GetVersions();
+        /// <summary>Parses raw version data (e.g. JSON string) into the database.</summary>
+        void ParseRaw(string data, System.Collections.Generic.Dictionary<System.Guid, string> architectures);
+
+        // Deprecated alias kept for backward compatibility.
+        [System.Obsolete("Use ParseRaw (fixed spelling).")]
+        void ParseRaw(string data, System.Collections.Generic.Dictionary<System.Guid, string> architectures);
     }
 }

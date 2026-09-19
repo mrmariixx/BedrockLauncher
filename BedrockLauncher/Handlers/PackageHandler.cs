@@ -353,8 +353,19 @@ namespace BedrockLauncher.Handlers
                 string subDirectory = Path.Combine(versionsRoot, "AppxBackups");
                 Directory.CreateDirectory(subDirectory);
 
-                bool isGdkCdn = VersionManager.Singleton != null && VersionManager.Singleton.TryGetGdkDownloadUrls(v.PackageID, out _);
-                string extension = isGdkCdn || v.PackageType == PackageType.GDK ? ".msixvc" : ".Appx";
+                string extension = ".Appx";
+                if (v.PackageType == PackageType.GDK)
+                {
+                    extension = ".package";
+                    if (VersionManager.Singleton != null && VersionManager.Singleton.TryGetGdkDownloadUrls(v.PackageID, out var urls) && urls.Count > 0)
+                    {
+                        var lowerUrl = urls[0].ToLowerInvariant();
+                        if (lowerUrl.EndsWith(".msixvc")) extension = ".msixvc";
+                        else if (lowerUrl.EndsWith(".msix")) extension = ".msix";
+                        else if (lowerUrl.EndsWith(".msixbundle")) extension = ".msixbundle";
+                    }
+                }
+
                 string fileName = "Minecraft-" + v.Name + extension;
                 // Always download/store under %AppData%\.minecraft_bedrock\versions\AppxBackups (or FixedDirectory equivalent)
                 string bkpsPath = Path.Combine(subDirectory, fileName);
@@ -444,6 +455,20 @@ namespace BedrockLauncher.Handlers
                 Trace.WriteLine($"Registering package ({v.PackageType}): {v.Name}");
                 MainDataModel.Default.ProgressBarState.SetProgressBarState(LauncherState.isRegisteringPackage);
 
+                if (v.PackageType == PackageType.GDK)
+                {
+                    string packageFile = FindSignedPackageBackup(v);
+
+                    if (string.IsNullOrEmpty(packageFile))
+                        throw new FileNotFoundException($"Pacchetto GDK firmato non trovato per {v.Name}");
+
+                    MainDataModel.Default.ProgressBarState.SetProgressBarText(Path.GetFileName(packageFile));
+                    Trace.WriteLine("Staging signed GDK package via AddPackageAsync: " + packageFile);
+                    await DeploymentProgressWrapper(PM.AddPackageAsync(new Uri(packageFile), null, Constants.StorePackageDeploymentOptions));
+                    Trace.WriteLine("App re-register done!");
+                    return;
+                }
+
                 if (!File.Exists(v.ManifestPath) && File.Exists(Path.Combine(v.GameDirectory, "MicrosoftGame.Config")))
                 {
                     EnsureWDAppManifest(v.GameDirectory, v.Type);
@@ -460,18 +485,7 @@ namespace BedrockLauncher.Handlers
                 }
                 else
                 {
-                    string packageFile = FindSignedPackageBackup(v);
-                    if (!string.IsNullOrEmpty(packageFile) && File.Exists(packageFile))
-                    {
-                        MainDataModel.Default.ProgressBarState.SetProgressBarText(Path.GetFileName(packageFile));
-                        Trace.WriteLine("Staging signed package via AddPackageAsync: " + packageFile);
-                        DeploymentOptions options = Constants.StorePackageDeploymentOptions;
-                        await DeploymentProgressWrapper(PM.AddPackageAsync(new Uri(packageFile), null, options));
-                    }
-                    else
-                    {
-                        throw new FileNotFoundException($"Cannot register package {v.Name}: manifest not found at {v.ManifestPath}");
-                    }
+                    throw new FileNotFoundException($"Cannot register package {v.Name}: manifest not found at {v.ManifestPath}");
                 }
 
                 Trace.WriteLine("App re-register done!");

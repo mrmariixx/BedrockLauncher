@@ -16,26 +16,25 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
     public class VersionManager
     {
         #region Singleton management
-        private static VersionManager _singleton = null;
 
+        private static VersionManager _singleton;
+
+        /// <summary>
+        /// The single active <see cref="VersionManager"/> instance.
+        /// Returns null (with a warning) if <see cref="VersionManager"/> has not yet been constructed.
+        /// </summary>
         public static VersionManager Singleton
         {
             get
             {
                 if (_singleton == null)
-                {
                     Trace.TraceWarning("Trying to access uninitialized VersionManager singleton.");
-                    return null;
-                }
-                else
-                    return _singleton;
+                return _singleton;
             }
             private set
             {
                 if (_singleton != null)
-                {
                     Trace.TraceWarning("Attempt to override VersionManager singleton denied.");
-                }
                 else
                     _singleton = value;
             }
@@ -48,16 +47,25 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
 
         #endregion
 
+        // ------------------------------------------------------------------ //
+        //  Delegates
+        // ------------------------------------------------------------------ //
         public delegate void DownloadProgress(long current, long total);
 
-        private int UserTokenIndex = 0;
+        // ------------------------------------------------------------------ //
+        //  Configuration
+        // ------------------------------------------------------------------ //
+        private int UserTokenIndex;
 
-        private static readonly string[] communityDBUrls = new[]
+        /// <summary>Fallback community version-database URLs, tried in order.</summary>
+        private static readonly string[] communityDBUrls =
         {
             "https://mrarm.io/r/w10-vdb",
             "https://www.raythnetwork.co.uk/versions.php?type=json"
         };
-        private static readonly string[] gdkLinksUrls = new[]
+
+        /// <summary>GdkLinks manifest URLs (minified first for speed).</summary>
+        private static readonly string[] gdkLinksUrls =
         {
             "https://raw.githubusercontent.com/MinecraftBedrockArchiver/GdkLinks/refs/heads/master/urls.min.json",
             "https://raw.githubusercontent.com/MinecraftBedrockArchiver/GdkLinks/master/urls.json"
@@ -67,24 +75,60 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
         private string communityDBFile;
         private string gdkLinksDBFile;
 
-        private HttpClient HttpClient = new HttpClient();
-        private StoreNetwork StoreNetwork = new StoreNetwork();
-        private List<VersionInfoJson> Versions = new List<VersionInfoJson>();
-        private readonly Dictionary<string, List<string>> GdkDownloadUrls = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        // ------------------------------------------------------------------ //
+        //  Shared HTTP client (reused across requests to avoid socket exhaustion)
+        // ------------------------------------------------------------------ //
+        private readonly HttpClient HttpClient = new HttpClient();
+
+        private readonly StoreNetwork StoreNetwork = new StoreNetwork();
+        private readonly List<VersionInfoJson> Versions = new List<VersionInfoJson>();
+        private readonly Dictionary<string, List<string>> GdkDownloadUrls =
+            new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        // ------------------------------------------------------------------ //
+        //  Public API
+        // ------------------------------------------------------------------ //
 
         public List<VersionInfoJson> GetVersions() => Versions.ToList();
 
-        public bool TryGetGdkDownloadUrls(string versionUuid, out List<string> urls) => GdkDownloadUrls.TryGetValue(versionUuid ?? string.Empty, out urls) && urls != null && urls.Count > 0;
-
-        public void Init(int _userTokenIndex, string _winstoreDBFile, string _communityDBFile, string _gdkLinksDBFile = null)
+        /// <summary>
+        /// Attempts to retrieve the list of direct download URLs for a GDK version.
+        /// </summary>
+        /// <param name="versionUuid">UUID string of the version.</param>
+        /// <param name="urls">Output list of CDN URLs.</param>
+        /// <returns>True when at least one URL is available.</returns>
+        public bool TryGetGdkDownloadUrls(string versionUuid, out List<string> urls)
         {
-            UserTokenIndex = _userTokenIndex;
-            winstoreDBFile = _winstoreDBFile;
-            communityDBFile = _communityDBFile;
-            gdkLinksDBFile = _gdkLinksDBFile ?? Path.Combine(Path.GetDirectoryName(_communityDBFile) ?? ".", "gdk_links_versions.json");
+            if (GdkDownloadUrls.TryGetValue(versionUuid ?? string.Empty, out urls) &&
+                urls != null && urls.Count > 0)
+                return true;
+            urls = null;
+            return false;
         }
 
-        public async Task DownloadVersion(string versionName, string updateIdentity, int revisionNumber, string destination, DownloadProgress progress, CancellationToken cancellationToken, VersionType type)
+        /// <summary>Initialises file-path configuration. Must be called before <see cref="LoadVersions"/>.</summary>
+        public void Init(int userTokenIndex, string winstoreDBFile, string communityDBFile, string gdkLinksDBFile = null)
+        {
+            UserTokenIndex      = userTokenIndex;
+            this.winstoreDBFile  = winstoreDBFile;
+            this.communityDBFile = communityDBFile;
+            this.gdkLinksDBFile  = gdkLinksDBFile
+                ?? Path.Combine(Path.GetDirectoryName(communityDBFile) ?? ".", "gdk_links_versions.json");
+        }
+
+        /// <summary>
+        /// Downloads a Minecraft package to <paramref name="destination"/>.
+        /// GDK packages are downloaded directly from Xbox CDN (via GdkLinks);
+        /// UWP packages fall back to the Microsoft Store download link.
+        /// </summary>
+        public async Task DownloadVersion(
+            string versionName,
+            string updateIdentity,
+            int revisionNumber,
+            string destination,
+            DownloadProgress progress,
+            CancellationToken cancellationToken,
+            VersionType type)
         {
             // Prefer GdkLinks CDN URLs for GDK builds when available.
             if (TryGetGdkDownloadUrls(updateIdentity, out var gdkUrls))
@@ -94,92 +138,134 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
                 {
                     try
                     {
-                        Trace.WriteLine("Downloading GDK package from GdkLinks: " + url);
+                        Trace.WriteLine($"Downloading GDK package from CDN: {url}");
                         await DownloadFromDirectUrl(url, destination, progress, cancellationToken);
                         return;
                     }
                     catch (Exception ex)
                     {
                         lastError = ex;
-                        Trace.WriteLine("GdkLinks mirror failed: " + url);
-                        Trace.WriteLine(ex);
+                        Trace.WriteLine($"CDN mirror failed: {url} — {ex.Message}");
                     }
                 }
-                throw new Exception($"All GdkLinks mirrors failed for {versionName}", lastError);
+                throw new IOException($"All GdkLinks CDN mirrors failed for '{versionName}'", lastError);
             }
 
+            // Fall back to UWP / Windows Store download.
             string link = await StoreNetwork.getDownloadLink(updateIdentity, revisionNumber, type);
             if (link == null)
-                throw new ArgumentException(string.Format("Bad updateIdentity for {0}", versionName));
-            Trace.WriteLine("Resolved download link: " + link);
+                throw new ArgumentException($"Could not resolve download link for '{versionName}' (updateId: {updateIdentity})");
+
+            Trace.WriteLine($"Downloading UWP package: {link}");
             await DownloadFromDirectUrl(link, destination, progress, cancellationToken);
         }
 
-        private async Task DownloadFromDirectUrl(string link, string destination, DownloadProgress progress, CancellationToken cancellationToken)
+        // ------------------------------------------------------------------ //
+        //  Internal download helper
+        // ------------------------------------------------------------------ //
+
+        private async Task DownloadFromDirectUrl(
+            string url,
+            string destination,
+            DownloadProgress progress,
+            CancellationToken cancellationToken)
         {
-            using (var resp = await HttpClient.GetAsync(link, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+            string temporaryPath = destination + ".download";
+
+            try
             {
+                using var resp = await HttpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 resp.EnsureSuccessStatusCode();
-                using (var inStream = await resp.Content.ReadAsStreamAsync())
-                using (var outStream = new FileStream(destination, FileMode.Create))
+
+                long totalSize   = resp.Content.Headers.ContentLength ?? -1;
+                long transferred = 0;
+                var  buf         = new byte[1024 * 1024]; // 1 MiB read buffer
+
+                progress(0, totalSize > 0 ? totalSize : 1);
+
+                // Progress is reported asynchronously to avoid blocking the I/O loop.
+                Task progressTask   = null;
+                CancellationTokenSource progressCts = new CancellationTokenSource();
+
+                using (var inStream  = await resp.Content.ReadAsStreamAsync())
+                using (var outStream = new FileStream(temporaryPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536, useAsync: true))
                 {
-                    long totalSize = resp.Content.Headers.ContentLength ?? -1;
-                    progress(0, totalSize > 0 ? totalSize : 1);
-                    long transferred = 0;
-                    byte[] buf = new byte[1024 * 1024];
-
-                    Task task = null;
-                    CancellationTokenSource ts = new CancellationTokenSource();
-
                     while (true)
                     {
                         int n = await inStream.ReadAsync(buf, 0, buf.Length, cancellationToken);
-                        if (n == 0)
-                            break;
+                        if (n == 0) break;
                         await outStream.WriteAsync(buf, 0, n, cancellationToken);
                         transferred += n;
-                        UpdateProgress(ref task, ref ts, transferred, totalSize > 0 ? totalSize : transferred);
+                        ScheduleProgressReport(ref progressTask, ref progressCts, transferred,
+                            totalSize > 0 ? totalSize : transferred, progress);
                     }
                 }
+
+                if (!File.Exists(temporaryPath) || new FileInfo(temporaryPath).Length == 0)
+                {
+                    throw new IOException("Il pacchetto scaricato è vuoto.");
+                }
+
+                if (File.Exists(destination))
+                    File.Delete(destination);
+
+                File.Move(temporaryPath, destination);
+
+                // Ensure the final progress report fires.
+                progress(transferred, totalSize > 0 ? totalSize : transferred);
             }
-
-            void UpdateProgress(ref Task task, ref CancellationTokenSource ts, long transferred, long totalSize)
+            catch
             {
-                if (task != null)
-                {
-                    if (!task.IsCompleted) ts.Cancel();
-                    task = null;
-                    ts = new CancellationTokenSource();
-                }
-                if (task == null)
-                {
-                    task = new Task(() => progress(transferred, totalSize), ts.Token);
-                }
-
-                task.Start();
+                if (File.Exists(temporaryPath))
+                    File.Delete(temporaryPath);
+                throw;
             }
         }
+
+        private static void ScheduleProgressReport(
+            ref Task task,
+            ref CancellationTokenSource cts,
+            long current,
+            long total,
+            DownloadProgress progress)
+        {
+            // Cancel any in-flight progress task and start a fresh one.
+            if (task != null && !task.IsCompleted)
+            {
+                cts.Cancel();
+                cts.Dispose();
+                cts = new CancellationTokenSource();
+            }
+            task = Task.Run(() => progress(current, total), cts.Token);
+        }
+
+        // ------------------------------------------------------------------ //
+        //  Version loading pipeline
+        // ------------------------------------------------------------------ //
+
+        /// <summary>
+        /// Refreshes the in-memory version list.
+        /// </summary>
+        /// <param name="getNewVersions">When true, fetches updated data from remote sources.</param>
+        /// <param name="checkMicrosoftStore">When true, also queries the Microsoft Store / WU network.</param>
         public async Task LoadVersions(bool getNewVersions, bool checkMicrosoftStore)
         {
             Versions.Clear();
             GdkDownloadUrls.Clear();
 
             await EnableUserAuthorization();
+
+            // 1. Community JSON database (UWP versions).
             VersionJsonDb communityDB = LoadJsonDBVersions(communityDBFile);
-
             if (getNewVersions)
-            {
                 await UpdateDBFromURL(communityDB, communityDBFile, communityDBUrls);
-            }
 
+            // 2. Windows Store database (UWP versions via WU API).
             VersionJsonDb winStoreDB = LoadJsonDBVersions(winstoreDBFile);
-
             if (getNewVersions && checkMicrosoftStore)
-            {
                 await UpdateDBFromStore(winStoreDB, winstoreDBFile);
-            }
 
-            // Always load GDK versions from GdkLinks (direct CDN urls.json).
+            // 3. GdkLinks (direct CDN URLs for GDK builds) — always loaded.
             await LoadGdkLinksVersions(getNewVersions);
         }
 
@@ -188,36 +274,37 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
             try
             {
                 string cachePath = gdkLinksDBFile;
-                string rawJson = null;
+                string rawJson   = null;
 
                 if (getNewVersions)
                 {
-                    foreach (var gdkUrl in gdkLinksUrls)
+                    foreach (var url in gdkLinksUrls)
                     {
                         try
                         {
-                            Trace.WriteLine("Fetching GDK versions from: " + gdkUrl);
-                            var resp = await HttpClient.GetAsync(gdkUrl);
+                            Trace.WriteLine($"Fetching GdkLinks manifest from: {url}");
+                            var resp = await HttpClient.GetAsync(url);
                             resp.EnsureSuccessStatusCode();
                             rawJson = await resp.Content.ReadAsStringAsync();
                             Directory.CreateDirectory(Path.GetDirectoryName(cachePath) ?? ".");
                             File.WriteAllText(cachePath, rawJson);
-                            Trace.WriteLine("GdkLinks cache updated: " + cachePath);
-                            break;
+                            Trace.WriteLine($"GdkLinks cache saved: {cachePath}");
+                            break; // Success — no need to try remaining URLs.
                         }
                         catch (Exception ex)
                         {
-                            Trace.WriteLine("GdkLinks fetch failed for " + gdkUrl + ": " + ex.Message);
+                            Trace.WriteLine($"GdkLinks fetch failed [{url}]: {ex.Message}");
                         }
                     }
                 }
 
+                // Fall back to cached file when the network is unavailable.
                 if (rawJson == null && File.Exists(cachePath))
                     rawJson = File.ReadAllText(cachePath);
 
                 if (string.IsNullOrWhiteSpace(rawJson))
                 {
-                    Trace.WriteLine("No GdkLinks data available.");
+                    Trace.WriteLine("No GdkLinks data available (no network and no cache).");
                     return;
                 }
 
@@ -231,21 +318,26 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
                 foreach (var version in gdkDb.Versions)
                 {
                     if (!MinecraftVersion.TryParse(version.GetVersion(), out _)) continue;
+
+                    // Skip exact UUID duplicates.
                     if (Versions.Exists(x => x.GetUUID() == version.GetUUID())) continue;
-                    if (Versions.Exists(x => x.GetVersion() == version.GetVersion() && x.GetArchitecture() == version.GetArchitecture() && x.GetVersionType() == version.GetVersionType()))
-                    {
-                        // Prefer GdkLinks entry (has direct download URL): replace matching community/store entry.
-                        Versions.RemoveAll(x => x.GetVersion() == version.GetVersion() && x.GetArchitecture() == version.GetArchitecture() && x.GetVersionType() == version.GetVersionType());
-                    }
+
+                    // If an equivalent entry exists from another source, replace it with the
+                    // GdkLinks entry so the caller can use its direct CDN URLs.
+                    Versions.RemoveAll(x =>
+                        x.GetVersion() == version.GetVersion() &&
+                        x.GetArchitecture() == version.GetArchitecture() &&
+                        x.GetVersionType() == version.GetVersionType());
+
                     Versions.Add(version);
                     added++;
                 }
 
-                Trace.WriteLine($"GdkLinks versions loaded: {added} (urls: {GdkDownloadUrls.Count})");
+                Trace.WriteLine($"GdkLinks: {added} new version(s) added (total CDN entries: {GdkDownloadUrls.Count}).");
             }
             catch (Exception ex)
             {
-                Trace.WriteLine("LoadGdkLinksVersions Failed!");
+                Trace.WriteLine("LoadGdkLinksVersions failed:");
                 Trace.WriteLine(ex);
             }
         }
@@ -260,55 +352,54 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
                     var resp = await HttpClient.GetAsync(url);
                     resp.EnsureSuccessStatusCode();
                     var data = await resp.Content.ReadAsStringAsync();
-                    db.PraseRaw(data, GetVersionArches());
+                    db.ParseRaw(data, GetVersionArches());
                     db.Save(filePath);
                     InsertVersionsFromDB(db);
-                    Trace.WriteLine("Successfully updated DB from: " + url);
-                    return;
+                    Trace.WriteLine($"Community DB updated from: {url}");
+                    return; // Success — stop trying.
                 }
                 catch (Exception ex)
                 {
-                    Trace.WriteLine($"UpdateDBFromURL failed for {url}: {ex.Message}");
+                    Trace.WriteLine($"UpdateDBFromURL failed [{url}]: {ex.Message}");
                 }
             }
+            Trace.TraceWarning("All community DB URLs failed.");
         }
+
         /// <summary>
-        /// Updates the databases by fetching the latest version
+        /// Queries the Microsoft Store / WU network for new UWP versions and persists them.
         /// </summary>
-        /// <param name="JsonDb">JSON database</param>
-        /// <param name="JsonFilePath">Path to the file storing the JSON database</param>
-        /// <returns></returns>
-        private async Task UpdateDBFromStore(VersionJsonDb JsonDb, string JsonFilePath)
+        private async Task UpdateDBFromStore(VersionJsonDb jsonDb, string jsonFilePath)
         {
             try
             {
-                if (File.Exists(JsonFilePath)) File.Delete(JsonFilePath);
-                await UpdateDB(VersionType.Release, JsonDb);
-                await UpdateDB(VersionType.Preview, JsonDb);
-                JsonDb.Save(JsonFilePath);
-                InsertVersionsFromDB(JsonDb);
+                if (File.Exists(jsonFilePath)) File.Delete(jsonFilePath);
+                await FetchStoreVersions(VersionType.Release, jsonDb);
+                await FetchStoreVersions(VersionType.Preview, jsonDb);
+                jsonDb.Save(jsonFilePath);
+                InsertVersionsFromDB(jsonDb);
             }
             catch (Exception ex)
             {
-                Trace.WriteLine("UpdateDBFromStore Failed!");
+                Trace.WriteLine("UpdateDBFromStore failed:");
                 Trace.WriteLine(ex);
             }
         }
-        private async Task UpdateDB(VersionType type, VersionJsonDb JsonDb)
+
+        private async Task FetchStoreVersions(VersionType type, VersionJsonDb jsonDb)
         {
             try
             {
                 var config = await StoreNetwork.fetchConfigLastChanged();
                 var cookie = await StoreNetwork.fetchCookie(config, type);
 
-                List<string> knownVersions = JsonDb.GetVersions().ConvertAll(x => x.GetUUID().ToString());
-                List<UpdateInfo> result = await StoreManager.CheckForGDKVersions(StoreNetwork, type, cookie, knownVersions);
-                JsonDb.AddVersion(result, type);
+                var knownVersions = jsonDb.GetVersions().ConvertAll(x => x.GetUUID().ToString());
+                var result = await StoreManager.CheckForUWPVersions(StoreNetwork, type, cookie, knownVersions);
+                jsonDb.AddVersion(result, type);
             }
             catch (Exception ex)
             {
-                Trace.WriteLine("UpdateDBFromStore.UpdateDB Failed!");
-                Trace.WriteLine("isBeta: " + type);
+                Trace.WriteLine($"FetchStoreVersions failed (type={type}):");
                 Trace.WriteLine(ex);
             }
         }
@@ -317,33 +408,35 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
         {
             try
             {
-                VersionJsonDb db = new VersionJsonDb();
+                var db = new VersionJsonDb();
                 db.ReadJson(filePath, GetVersionArches());
-                db.WriteJson(filePath);
+                db.WriteJson(filePath); // Re-save to normalise formatting.
                 InsertVersionsFromDB(db);
                 return db;
             }
             catch (Exception ex)
             {
-                Trace.WriteLine("LoadJsonDBVersions Failed! Generating Blank VersionJsonDb");
-                Trace.WriteLine("File: " + filePath);
+                Trace.TraceWarning($"LoadJsonDBVersions failed for '{filePath}' — creating empty DB.");
                 Trace.WriteLine(ex);
                 var db = new VersionJsonDb();
                 db.Save(filePath);
                 return db;
             }
-
         }
+
         private void InsertVersionsFromDB(VersionJsonDb db)
         {
-            foreach (VersionInfoJson version in db.list)
+            foreach (var version in db.list)
             {
-                if (!MinecraftVersion.TryParse(version.GetVersion(), out MinecraftVersion ver)) continue;
+                if (!MinecraftVersion.TryParse(version.GetVersion(), out _)) continue;
                 if (Versions.Exists(x => x.GetUUID() == version.GetUUID())) continue;
-                if (Versions.Exists(x => x.GetVersion() == version.GetVersion() && x.GetArchitecture() == version.GetArchitecture())) continue;
+                if (Versions.Exists(x =>
+                        x.GetVersion() == version.GetVersion() &&
+                        x.GetArchitecture() == version.GetArchitecture())) continue;
                 Versions.Add(version);
             }
         }
+
         private async Task EnableUserAuthorization()
         {
             try
@@ -353,10 +446,12 @@ namespace BedrockLauncher.UpdateProcessor.Handlers
             }
             catch (Exception ex)
             {
-                Trace.WriteLine(ex.ToString());
+                // Non-fatal: the launcher can still fetch public (unauthenticated) versions.
+                Trace.WriteLine($"EnableUserAuthorization failed (token index {UserTokenIndex}): {ex.Message}");
             }
-
         }
-        private Dictionary<Guid, string> GetVersionArches() => Versions.ToDictionary(x => x.GetUUID(), x => x.GetArchitecture());
+
+        private Dictionary<Guid, string> GetVersionArches()
+            => Versions.ToDictionary(x => x.GetUUID(), x => x.GetArchitecture());
     }
 }

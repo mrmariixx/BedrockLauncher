@@ -50,7 +50,7 @@ namespace BedrockLauncher.Pages.Preview.Installation
 
             if (!MainContext.ShowX64 && v.Architecture == "x64") return false;
             else if (!MainContext.ShowX86 && v.Architecture == "x86") return false;
-            else if (!MainContext.ShowARM && v.Architecture == "arm") return false;
+            else if (!MainContext.ShowARM && (v.Architecture == "arm" || v.Architecture == "arm64")) return false;
 
             if (!MainContext.ShowUWP && v.PackageType == BedrockLauncher.UpdateProcessor.Enums.PackageType.UWP) return false;
             if (!MainContext.ShowGDK && v.PackageType == BedrockLauncher.UpdateProcessor.Enums.PackageType.GDK) return false;

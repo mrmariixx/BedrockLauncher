@@ -67,23 +67,23 @@ namespace BedrockLauncher.Downloaders
             foreach (VersionInfoJson entry in versionList)
             {
                 // Trace.WriteLine($"Found version: {entry.GetVersion()}");
-                versions.Add(new MCVersion(entry.GetUUID().ToString(), entry.GetUUID().ToString(), GetRealVersion(entry.GetVersion()), entry.GetVersionType(), entry.GetArchitecture()));
+                versions.Add(new MCVersion(entry.GetUUID().ToString(), entry.GetUUID().ToString(), GetRealVersion(entry.GetVersion()), entry.GetVersionType(), entry.GetArchitecture(), entry.GetPackageType()));
             }
                 
             versions.Sort((x, y) => x.Compare(y));
 
 
             //Get Latest Release and Beta Versions an Insert them into the ObservableCollection
-            MCVersion latestRelease = versions.First(x => x.IsRelease == true && VersionDbExtensions.DoesVerionArchMatch(Constants.CurrentArchitecture, x.Architecture));
-            MCVersion? latestBeta = versions.FirstOrDefault(x => x.IsBeta == true && VersionDbExtensions.DoesVerionArchMatch(Constants.CurrentArchitecture, x.Architecture), null);
-            MCVersion latestPreview = versions.First(x => x.IsPreview == true && VersionDbExtensions.DoesVerionArchMatch(Constants.CurrentArchitecture, x.Architecture));
+            MCVersion latestRelease = versions.First(x => x.IsRelease == true && VersionDbExtensions.DoesVersionArchMatch(Constants.CurrentArchitecture, x.Architecture));
+            MCVersion? latestBeta = versions.FirstOrDefault(x => x.IsBeta == true && VersionDbExtensions.DoesVersionArchMatch(Constants.CurrentArchitecture, x.Architecture), null);
+            MCVersion latestPreview = versions.First(x => x.IsPreview == true && VersionDbExtensions.DoesVersionArchMatch(Constants.CurrentArchitecture, x.Architecture));
 
             this.latestReleaseRef = latestRelease;
             this.latestBetaRef = latestBeta;
             this.latestPreviewRef = latestPreview;
 
-            MCVersion latest_preview = new MCVersion(Constants.LATEST_PREVIEW_UUID, Constants.LATEST_PREVIEW_UUID, Application.Current.Resources["EditInstallationScreen_LatestPreview"].ToString(), latestPreview.Type, Constants.CurrentArchitecture);
-            MCVersion latest_release = new MCVersion(Constants.LATEST_RELEASE_UUID, Constants.LATEST_RELEASE_UUID, Application.Current.Resources["EditInstallationScreen_LatestRelease"].ToString(), latestRelease.Type, Constants.CurrentArchitecture);
+            MCVersion latest_preview = new MCVersion(Constants.LATEST_PREVIEW_UUID, Constants.LATEST_PREVIEW_UUID, Application.Current.Resources["EditInstallationScreen_LatestPreview"].ToString(), latestPreview.Type, Constants.CurrentArchitecture, latestPreview.PackageType);
+            MCVersion latest_release = new MCVersion(Constants.LATEST_RELEASE_UUID, Constants.LATEST_RELEASE_UUID, Application.Current.Resources["EditInstallationScreen_LatestRelease"].ToString(), latestRelease.Type, Constants.CurrentArchitecture, latestRelease.PackageType);
 
             versions.Insert(0, latest_preview);
             versions.Insert(0, latest_release);
@@ -91,7 +91,7 @@ namespace BedrockLauncher.Downloaders
             // Will only appear is user had previously loaded beta version
             if (latestBeta != null)
             {
-                MCVersion latest_beta = new MCVersion(Constants.LATEST_BETA_UUID, Constants.LATEST_BETA_UUID, Application.Current.Resources["EditInstallationScreen_LatestBeta"].ToString(), latestBeta.Type, Constants.CurrentArchitecture);
+                MCVersion latest_beta = new MCVersion(Constants.LATEST_BETA_UUID, Constants.LATEST_BETA_UUID, Application.Current.Resources["EditInstallationScreen_LatestBeta"].ToString(), latestBeta.Type, Constants.CurrentArchitecture, latestBeta.PackageType);
                 versions.Insert(0, latest_beta);
             }
 
@@ -115,6 +115,7 @@ namespace BedrockLauncher.Downloaders
                 string mainifest_file = Path.Combine(directory.FullName, MCVersionExtensions.MainifestFileName);
                 string exe_file = Path.Combine(directory.FullName, "Minecraft.Windows.exe");
                 string gdk_config = Path.Combine(directory.FullName, "MicrosoftGame.Config");
+                string cdn_package_file = Path.Combine(directory.FullName, "cdn_package.txt");
                 string packageId_file = Path.Combine(directory.FullName, MCVersionExtensions.IdentificationFilename);
                 string customName_file = Path.Combine(directory.FullName, "custom_name.txt");
                 string uuid = directory.Name;
@@ -123,8 +124,10 @@ namespace BedrockLauncher.Downloaders
                 {
                     bool hasManifest = File.Exists(mainifest_file);
                     bool hasExe = File.Exists(exe_file);
+                    bool hasGdkConfig = File.Exists(gdk_config);
+                    bool hasCdnPackage = File.Exists(cdn_package_file);
 
-                    if (hasManifest || hasExe)
+                    if (hasManifest || hasExe || hasGdkConfig || hasCdnPackage)
                     {
                         //Legacy Version Support
                         if (directory.Name.StartsWith("Minecraft-"))
@@ -149,17 +152,23 @@ namespace BedrockLauncher.Downloaders
                             {
                                 customVersion = await GetAppxMaifestIdentity(packageID, uuid, mainifest_file);
                             }
-                            else if (hasExe)
+                            else if (hasExe || hasGdkConfig || hasCdnPackage)
                             {
-                                var fvi = FileVersionInfo.GetVersionInfo(exe_file);
-                                string verStr = fvi.ProductVersion ?? fvi.FileVersion ?? uuid;
-                                customVersion = new MCVersion(uuid, packageID, verStr, VersionType.Release, Constants.CurrentArchitecture);
+                                string verStr = uuid;
+                                if (hasExe)
+                                {
+                                    var fvi = FileVersionInfo.GetVersionInfo(exe_file);
+                                    verStr = fvi.ProductVersion ?? fvi.FileVersion ?? uuid;
+                                }
+                                customVersion = new MCVersion(uuid, packageID, verStr, VersionType.Release, Constants.CurrentArchitecture, PackageType.UWP);
                             }
 
                             if (customVersion != null)
                             {
-                                if (hasExe || File.Exists(gdk_config))
+                                if (hasGdkConfig || hasCdnPackage)
                                     customVersion.PackageType = PackageType.GDK;
+                                else
+                                    customVersion.PackageType = PackageType.UWP;
 
                                 string customNameFallback = string.Format("{0}.{1}.{2}", customVersion.Name, customVersion.Type.ToString().FirstOrDefault(), customVersion.Architecture);
                                 customVersion.CustomName = await FileExtensions.TryReadAllTextAsync(customName_file, customNameFallback);

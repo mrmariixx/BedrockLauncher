@@ -18,12 +18,12 @@ namespace BedrockLauncher.ViewModels
         public bool Launcher_ShowReleases { get; set; } = true;
         public bool Launcher_ShowBetas { get; set; } = true;
 
-        public bool Offical_ShowJavaContent { get; set; } = true;
-        public bool Offical_ShowDungeonsContent { get; set; } = true;
-        public bool Offical_ShowBedrockContent { get; set; } = true;
-        public string Offical_SearchBoxText { get; set; } = string.Empty;
+        public bool Official_ShowJavaContent { get; set; } = true;
+        public bool Official_ShowDungeonsContent { get; set; } = true;
+        public bool Official_ShowBedrockContent { get; set; } = true;
+        public string Official_SearchBoxText { get; set; } = string.Empty;
 
-        public ObservableCollection<News_OfficalItem> FeedItemsOffical { get; set; } = new ObservableCollection<News_OfficalItem>();
+        public ObservableCollection<News_OfficialItem> FeedItemsOfficial { get; set; } = new ObservableCollection<News_OfficialItem>();
         public ObservableCollection<PatchNote_Launcher> LauncherNewsItems { get; set; } = new ObservableCollection<PatchNote_Launcher>();
 
     }

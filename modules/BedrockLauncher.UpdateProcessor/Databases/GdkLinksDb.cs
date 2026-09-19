@@ -71,26 +71,46 @@ namespace BedrockLauncher.UpdateProcessor.Databases
                 if (string.IsNullOrWhiteSpace(versionName)) continue;
                 if (!MinecraftVersion.TryParse(versionName, out _)) continue;
 
-                var urls = property.Value as JArray;
-                if (urls == null || urls.Count == 0) continue;
-
-                var urlList = urls
-                    .Select(x => x?.ToString())
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-                if (urlList.Count == 0) continue;
-
-                // Expand with all CDN mirrors so the downloader can fall back automatically.
-                urlList = ExpandWithMirrors(urlList);
-
-                string architecture = InferArchitecture(urlList[0]);
-                string uuid = CreateStableUuid($"gdk:{type}:{versionName}:{architecture}").ToString();
-
-                Versions.Add(new VersionInfoJson(versionName, uuid, type, architecture));
-                DownloadUrlsByUuid[uuid] = urlList;
+                if (property.Value is JArray urlsArray)
+                {
+                    ProcessUrlList(versionName, type, urlsArray, null);
+                }
+                else if (property.Value is JObject archMap)
+                {
+                    foreach (var archProp in archMap.Properties())
+                    {
+                        if (archProp.Value is JArray archUrlsArray)
+                        {
+                            ProcessUrlList(versionName, type, archUrlsArray, archProp.Name);
+                        }
+                    }
+                }
             }
+        }
+
+        private void ProcessUrlList(string versionName, VersionType type, JArray urls, string architectureHint)
+        {
+            if (urls == null || urls.Count == 0) return;
+
+            var urlList = urls
+                .Select(x => x?.ToString())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (urlList.Count == 0) return;
+
+            // Expand with all CDN mirrors so the downloader can fall back automatically.
+            urlList = ExpandWithMirrors(urlList);
+
+            string architecture = !string.IsNullOrEmpty(architectureHint) 
+                ? architectureHint 
+                : InferArchitecture(urlList[0]);
+                
+            string uuid = CreateStableUuid($"gdk:{type}:{versionName}:{architecture}").ToString();
+
+            Versions.Add(new VersionInfoJson(versionName, uuid, type, architecture, PackageType.GDK));
+            DownloadUrlsByUuid[uuid] = urlList;
         }
 
         /// <summary>

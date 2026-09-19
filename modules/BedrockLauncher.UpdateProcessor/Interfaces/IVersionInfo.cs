@@ -1,4 +1,4 @@
-﻿using BedrockLauncher.UpdateProcessor.Enums;
+using BedrockLauncher.UpdateProcessor.Enums;
 using System;
 
 namespace BedrockLauncher.UpdateProcessor.Interfaces
@@ -10,5 +10,6 @@ namespace BedrockLauncher.UpdateProcessor.Interfaces
         public string GetArchitecture();
         public VersionType GetVersionType();
         public bool GetIsBeta();
+        public PackageType GetPackageType();
     }
 }
