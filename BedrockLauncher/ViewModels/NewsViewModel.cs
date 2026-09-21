@@ -1,4 +1,4 @@
-﻿using BedrockLauncher.Classes.Launcher;
+using BedrockLauncher.Classes.Launcher;
 using PostSharp.Patterns.Model;
 using System;
 using System.Collections.Generic;
@@ -23,7 +23,7 @@ namespace BedrockLauncher.ViewModels
         public bool Official_ShowBedrockContent { get; set; } = true;
         public string Official_SearchBoxText { get; set; } = string.Empty;
 
-        public ObservableCollection<News_OfficialItem> FeedItemsOfficial { get; set; } = new ObservableCollection<News_OfficialItem>();
+        public ObservableCollection<News_OfficalItem> FeedItemsOfficial { get; set; } = new ObservableCollection<News_OfficalItem>();
         public ObservableCollection<PatchNote_Launcher> LauncherNewsItems { get; set; } = new ObservableCollection<PatchNote_Launcher>();
 
     }
