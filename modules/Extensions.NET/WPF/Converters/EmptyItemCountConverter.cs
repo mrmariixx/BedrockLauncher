@@ -1,0 +1,9 @@
+﻿using System.Windows;
+
+namespace JemExtensions.WPF.Converters
+{
+    public sealed class EmptyItemCountConverter : ItemCountConverterBase<Visibility>
+    {
+        public EmptyItemCountConverter() : base(Visibility.Visible, Visibility.Collapsed, 0) { }
+    }
+}

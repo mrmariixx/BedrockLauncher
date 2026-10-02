@@ -1,0 +1,38 @@
+name: Build Test
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    types: [opened]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Use GitHub build targets
+        shell: bash
+        run: |
+          cp -f \
+            "${GITHUB_WORKSPACE}/BedrockLauncher/GitHub.Directory.Build.targets" \
+            "${GITHUB_WORKSPACE}/BedrockLauncher/Directory.Build.targets"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore dependencies
+        run: dotnet restore BedrockLauncher.sln
+
+      - name: Build
+        run: msbuild BedrockLauncher.sln /p:Configuration=Debug /p:Restore=false
