@@ -19,6 +19,8 @@ using Windows.ApplicationModel;
 using Windows.Foundation;
 using Windows.Management.Deployment;
 using Windows.System;
+using StorageFile = Windows.Storage.StorageFile;
+using StorageFolder = Windows.Storage.StorageFolder;
 using ZipProgress = JemExtensions.ZipFileExtensions.ZipProgress;
 using BedrockLauncher.Enums;
 using System.Windows.Input;
@@ -60,76 +62,42 @@ namespace BedrockLauncher.Handlers
                 MainDataModel.Default.ProgressBarState
                     .SetProgressBarState(LauncherState.isLaunching);
 
-                /*
-                 * GDK installs land in XboxGames with GameLaunchHelper as
-                 * the AppX entry point (Microsoft updater). Prefer launching
-                 * Minecraft.Windows.exe directly / via a loose FullTrust
-                 * registration so Play does not require a manual start.
-                 */
-                if (v.PackageType == PackageType.GDK && !LaunchEditor)
+                if (LaunchEditor)
                 {
-                    await PrepareGdkForLaunchAsync(v);
+                    throw new NotSupportedException(
+                        "The editor is unavailable for this installation.");
+                }
 
-                    if (await TryLaunchExecutableAsync(
+                if (v.PackageType == PackageType.GDK)
+                {
+                    if (!IsGdkPackageRegistered(v))
+                    {
+                        throw new FileNotFoundException(
+                            $"The GDK package {v.Name} is not registered with Windows. Install it first from the launcher.");
+                    }
+
+                    if (!await TryLaunchRegisteredGdkPackageAsync(
                             v,
                             KeepLauncherOpen))
                     {
-                        return;
+                        throw new AppLaunchFailedException(
+                            $"Windows could not launch registered GDK version {v.Name}.",
+                            new InvalidOperationException(
+                                "The registered package did not expose a launchable application entry."));
                     }
                 }
-
-                if (!IsPackageRegistered(v))
+                else if (!IsLocalPackageReady(v))
                 {
-                    Trace.WriteLine(
-                        $"Package not registered for {v.Name} at {v.GameDirectory}, registering...");
-
-                    await UnregisterPackage(v, keepVersion: false);
-                    await RegisterPackage(v);
-
-                    if (v.PackageType == PackageType.GDK)
-                    {
-                        await PrepareGdkForLaunchAsync(v);
-
-                        if (!LaunchEditor &&
-                            await TryLaunchExecutableAsync(
-                                v,
-                                KeepLauncherOpen))
-                        {
-                            return;
-                        }
-                    }
+                    throw new FileNotFoundException(
+                        $"The local version {v.Name} is incomplete. Expected Minecraft.Windows.exe and an AppxManifest.xml or MicrosoftGame.Config in {v.GameDirectory}.");
                 }
-
-                if (!LaunchEditor &&
-                    IsRegisteredAtGameDirectory(v) &&
-                    await TryLaunchViaAppDiagnosticInfoAsync(
-                        v,
-                        KeepLauncherOpen))
+                else if (!await TryLaunchExecutableAsync(
+                             v,
+                             KeepLauncherOpen))
                 {
-                    return;
-                }
-
-                if (!LaunchEditor &&
-                    await TryLaunchExecutableAsync(
-                        v,
-                        KeepLauncherOpen))
-                {
-                    return;
-                }
-
-                if (await Launcher.LaunchUriAsync(
-                    new Uri(
-                        $"{Constants.GetUri(v.Type)}:?Editor={LaunchEditor}")))
-                {
-                    Trace.WriteLine("App launch finished via URI!");
-                    await FinishLaunchAsync(KeepLauncherOpen);
-                }
-                else
-                {
-                    SetException(
-                        new AppLaunchFailedException(
-                            "Impossible to launch Minecraft: package not found or failed to start",
-                            new Exception()));
+                    throw new AppLaunchFailedException(
+                        "Minecraft could not be started from its local version folder.",
+                        new FileNotFoundException(v.ExecutablePath));
                 }
             }
             catch (Exception e)
@@ -139,7 +107,7 @@ namespace BedrockLauncher.Handlers
             }
         }
 
-        public async Task InstallPackage(
+        public async Task<bool> InstallPackage(
             MCVersion v,
             string dirPath)
         {
@@ -147,9 +115,12 @@ namespace BedrockLauncher.Handlers
             {
                 StartTask();
 
-                bool hasFiles = v.HasPlayableFiles;
+                bool versionIsInstalled =
+                    v.PackageType == PackageType.GDK
+                        ? IsGdkPackageRegistered(v)
+                        : v.HasPlayableFiles;
 
-                if (!hasFiles)
+                if (!versionIsInstalled)
                 {
                     List<VersionInfoJson> versions =
                         VersionManager.Singleton.GetVersions();
@@ -170,35 +141,39 @@ namespace BedrockLauncher.Handlers
                     await DownloadAndExtractPackage(v);
                 }
 
-                if (!IsPackageRegistered(v))
-                {
-                    await UnregisterPackage(v, keepVersion: false);
-                    await RegisterPackage(v);
-                }
-                else
-                {
-                    Trace.WriteLine(
-                        $"Skipping redeploy for {v.Name} — already registered at {v.GameDirectory}");
-                }
-
                 if (v.PackageType == PackageType.GDK)
                 {
-                    await PrepareGdkForLaunchAsync(v);
+                    if (!IsGdkPackageRegistered(v))
+                    {
+                        throw new InvalidDataException(
+                            $"Windows did not register GDK version {v.Name} after deployment.");
+                    }
+
+                    await SaveGdkRegistrationMarkerAsync(v);
+                }
+                else if (!IsLocalPackageReady(v))
+                {
+                    throw new InvalidDataException(
+                        $"This UWP package could not be extracted into a runnable local version folder. Expected Minecraft.Windows.exe and an AppxManifest.xml or MicrosoftGame.Config in {v.GameDirectory}.");
                 }
 
                 await RedirectSaveData(dirPath, v.Type);
+                return true;
             }
             catch (PackageManagerException e)
             {
                 SetException(e);
+                return false;
             }
             catch (NoVersionAccessibleException e)
             {
                 SetException(e);
+                return false;
             }
             catch (Exception e)
             {
                 SetException(new AppInstallFailedException(e));
+                return false;
             }
             finally
             {
@@ -620,6 +595,12 @@ namespace BedrockLauncher.Handlers
                 Trace.WriteLine(
                     "Download starting -> " + dlPath);
 
+                if (v.Type == VersionType.Beta &&
+                    v.PackageType != PackageType.GDK)
+                {
+                    await AuthenticateBetaUser();
+                }
+
                 await VersionDownloader.DownloadVersion(
                     v.DisplayName,
                     v.PackageID,
@@ -653,6 +634,32 @@ namespace BedrockLauncher.Handlers
             }
         }
 
+        private async Task AuthenticateBetaUser()
+        {
+            try
+            {
+                var userIndex =
+                    Properties.LauncherSettings.Default
+                        .CurrentInsiderAccountIndex;
+                var token =
+                    await Task.Run(
+                        () => AuthenticationManager.Default
+                            .GetWUToken(userIndex));
+                VersionDownloader.SetMSAUserToken(token);
+            }
+            catch (PackageManagerException)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                Trace.WriteLine(
+                    "Error while Authenticating UserToken for Version Fetching:\n" +
+                    e);
+                throw new BetaAuthenticationFailedException(e);
+            }
+        }
+
         private async Task RegisterPackage(MCVersion v)
         {
             try
@@ -666,6 +673,32 @@ namespace BedrockLauncher.Handlers
 
                 if (v.PackageType == PackageType.GDK)
                 {
+                    if (File.Exists(v.ManifestPath) &&
+                        File.Exists(v.ExecutablePath))
+                    {
+                        if (!FixGDKManifest(v.ManifestPath, v.Type))
+                        {
+                            throw new IOException(
+                                $"Could not patch GDK manifest at {v.ManifestPath}.");
+                        }
+
+                        MainDataModel.Default.ProgressBarState
+                            .SetProgressBarText(
+                                v.GetPackageNameFromMainifest());
+
+                        Trace.WriteLine(
+                            "Registering loose GDK package from versions folder: " +
+                            v.ManifestPath);
+
+                        await DeploymentProgressWrapper(
+                            PM.RegisterPackageAsync(
+                                new Uri(v.ManifestPath),
+                                null,
+                                Constants.PackageDeploymentOptions));
+
+                        return;
+                    }
+
                     string packageFile =
                         FindPackageFromMarker(v)
                         ?? FindSignedPackageBackup(v);
@@ -751,7 +784,6 @@ namespace BedrockLauncher.Handlers
 
         private async Task PrepareGdkForLaunchAsync(MCVersion v)
         {
-            await DecryptAndMoveEXEAsync(v);
             await RegisterGdkLoosePackageAsync(v);
         }
 
@@ -916,56 +948,33 @@ namespace BedrockLauncher.Handlers
             MCVersion v,
             bool KeepLauncherOpen)
         {
-            string exePath = null;
-            string workingDirectory = null;
-
-            bool localFolderLooksComplete =
-                File.Exists(v.ExecutablePath) &&
-                (File.Exists(
-                     Path.Combine(
-                         v.GameDirectory,
-                         "MicrosoftGame.Config")) ||
-                 File.Exists(v.ManifestPath));
-
-            // Prefer XboxGames Content when the version folder only has a
-            // decrypted exe stub — that folder cannot run the full game.
-            string xboxExe = FindXboxGamesMinecraftExe(v.Type);
-
-            if (localFolderLooksComplete)
-            {
-                exePath = v.ExecutablePath;
-                workingDirectory = v.GameDirectory;
-            }
-            else if (!string.IsNullOrWhiteSpace(xboxExe))
-            {
-                exePath = xboxExe;
-                workingDirectory = Path.GetDirectoryName(xboxExe);
-            }
-            else if (File.Exists(v.ExecutablePath))
-            {
-                exePath = v.ExecutablePath;
-                workingDirectory = v.GameDirectory;
-            }
-
-            if (string.IsNullOrWhiteSpace(exePath) ||
-                !File.Exists(exePath))
+            if (!IsLocalPackageReady(v))
             {
                 return false;
             }
 
             Trace.WriteLine(
                 "Launching Minecraft.Windows.exe directly (bypass updater): " +
-                exePath);
+                v.ExecutablePath);
 
-            var psi = new ProcessStartInfo(exePath)
+            var psi = new ProcessStartInfo(v.ExecutablePath)
             {
-                WorkingDirectory = workingDirectory,
+                WorkingDirectory = v.GameDirectory,
                 UseShellExecute = true
             };
 
             Process.Start(psi);
             await FinishLaunchAsync(KeepLauncherOpen);
             return true;
+        }
+
+        private static bool IsLocalPackageReady(MCVersion version)
+        {
+            return File.Exists(version.ExecutablePath) &&
+                   (File.Exists(version.ManifestPath) ||
+                    File.Exists(Path.Combine(
+                        version.GameDirectory,
+                        "MicrosoftGame.Config")));
         }
 
         private async Task FinishLaunchAsync(bool KeepLauncherOpen)
@@ -980,193 +989,6 @@ namespace BedrockLauncher.Handlers
                 await GetGameHandle(
                     Constants.MINECRAFT_PROCESS_NAME);
             }
-        }
-
-        private async Task DecryptAndMoveEXEAsync(MCVersion v)
-        {
-            await Task.Run(() =>
-            {
-                try
-                {
-                    string directory =
-                        Path.GetFullPath(v.GameDirectory);
-
-                    string exeDstPath =
-                        Path.Combine(
-                            directory,
-                            "Minecraft.Windows.exe");
-
-                    if (File.Exists(exeDstPath))
-                    {
-                        Trace.WriteLine(
-                            $"Minecraft.Windows.exe already exists at {exeDstPath}");
-
-                        return;
-                    }
-
-                    string exeSrcPath =
-                        FindXboxGamesMinecraftExe(v.Type);
-
-                    if (string.IsNullOrWhiteSpace(exeSrcPath) ||
-                        !File.Exists(exeSrcPath))
-                    {
-                        Trace.WriteLine(
-                            "Minecraft.Windows.exe was not found in XboxGames — skipping decrypt copy.");
-                        return;
-                    }
-
-                    string packageFamilyName =
-                        Constants.GetPackageFamily(v.Type);
-
-                    Directory.CreateDirectory(directory);
-
-                    MainDataModel.Default.ProgressBarState
-                        .SetProgressBarState(
-                            LauncherState.isExtracting);
-
-                    Trace.WriteLine(
-                        $"Extracting Minecraft.Windows.exe -> {exeDstPath}");
-
-                    string copyCommand =
-                        $"Copy-Item -LiteralPath '{exeSrcPath}' " +
-                        $"-Destination '{exeDstPath}' -Force";
-
-                    string command =
-                        "Invoke-CommandInDesktopPackage " +
-                        $"-PackageFamilyName '{packageFamilyName}' " +
-                        "-App 'Game' " +
-                        "-Command 'powershell.exe' " +
-                        $"-Args '-NoProfile -Command \"{copyCommand}\"'";
-
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = "powershell.exe",
-                        Arguments =
-                            "-NoProfile -ExecutionPolicy Bypass -Command " +
-                            "\"" + command.Replace("\"", "\\\"") + "\"",
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    };
-
-                    using Process process =
-                        Process.Start(psi);
-
-                    if (process == null)
-                    {
-                        throw new InvalidOperationException(
-                            "Failed to start PowerShell.");
-                    }
-
-                    string output =
-                        process.StandardOutput.ReadToEnd();
-
-                    string error =
-                        process.StandardError.ReadToEnd();
-
-                    process.WaitForExit();
-
-                    if (!string.IsNullOrWhiteSpace(output))
-                    {
-                        Trace.WriteLine(
-                            "DecryptAndMoveEXE output: " +
-                            output);
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(error))
-                    {
-                        Trace.WriteLine(
-                            "DecryptAndMoveEXE error: " +
-                            error);
-                    }
-
-                    // Fallback: plain copy if container invoke failed
-                    // (exe may already be readable outside the package).
-                    if (!File.Exists(exeDstPath))
-                    {
-                        try
-                        {
-                            File.Copy(exeSrcPath, exeDstPath, true);
-                        }
-                        catch (Exception copyEx)
-                        {
-                            Trace.WriteLine(
-                                "Plain XboxGames exe copy failed: " +
-                                copyEx.Message);
-                        }
-                    }
-
-                    if (!File.Exists(exeDstPath))
-                    {
-                        Trace.WriteLine(
-                            "Minecraft.Windows.exe was not copied successfully.");
-                        return;
-                    }
-
-                    Trace.WriteLine(
-                        $"Minecraft.Windows.exe extracted successfully: {exeDstPath}");
-                }
-                catch (Exception ex)
-                {
-                    Trace.WriteLine(
-                        "DecryptAndMoveEXEAsync error: " + ex);
-                }
-            });
-        }
-
-        private static string FindXboxGamesMinecraftExe(VersionType versionType)
-        {
-            string contentDir =
-                FindXboxGamesContentDirectory(versionType);
-
-            if (string.IsNullOrWhiteSpace(contentDir))
-                return null;
-
-            string exe =
-                Path.Combine(
-                    contentDir,
-                    "Minecraft.Windows.exe");
-
-            return File.Exists(exe) ? exe : null;
-        }
-
-        private static string FindXboxGamesContentDirectory(VersionType versionType)
-        {
-            const string xboxGamesRoot = @"C:\XboxGames";
-
-            if (!Directory.Exists(xboxGamesRoot))
-                return null;
-
-            string baseName =
-                versionType == VersionType.Preview
-                    ? "Minecraft Preview for Windows"
-                    : "Minecraft for Windows";
-
-            // Prefer the exact folder, then numbered leftovers like
-            // "Minecraft for Windows (1)" from repeated GDK extracts.
-            var directories = Directory
-                .GetDirectories(xboxGamesRoot, baseName + "*")
-                .OrderBy(path =>
-                    string.Equals(
-                        Path.GetFileName(path),
-                        baseName,
-                        StringComparison.OrdinalIgnoreCase)
-                        ? 0
-                        : 1)
-                .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            foreach (string directory in directories)
-            {
-                string content =
-                    Path.Combine(directory, "Content");
-
-                if (Directory.Exists(content))
-                    return content;
-            }
-
-            return null;
         }
 
         private static string FindPackageFromMarker(MCVersion v)
@@ -1446,11 +1268,9 @@ namespace BedrockLauncher.Handlers
 
                 bool extractedAsZip = false;
 
-                try
+                using (var fileStream =
+                    File.OpenRead(pkgPath))
                 {
-                    using var fileStream =
-                        File.OpenRead(pkgPath);
-
                     byte[] header = new byte[4];
 
                     int read =
@@ -1491,12 +1311,6 @@ namespace BedrockLauncher.Handlers
 
                         extractedAsZip = true;
                     }
-                }
-                catch (Exception ex)
-                {
-                    Trace.WriteLine(
-                        "Zip extraction unavailable: " +
-                        ex.Message);
                 }
 
                 Directory.CreateDirectory(
@@ -1564,6 +1378,13 @@ namespace BedrockLauncher.Handlers
                             marker,
                             desiredBackup);
                     }
+
+                    if (v.PackageType == PackageType.GDK)
+                    {
+                        await InstallGdkPackageAsync(
+                            v,
+                            desiredBackup);
+                    }
                 }
 
                 if (File.Exists(dlPath) &&
@@ -1611,6 +1432,712 @@ namespace BedrockLauncher.Handlers
             {
                 ResetTask();
             }
+        }
+
+        private async Task MaterializeGdkPackageAsync(
+            MCVersion version,
+            string packagePath,
+            CancellationTokenSource cancelSource)
+        {
+            string packageFamily =
+                Constants.GetPackageFamily(version.Type);
+
+            var registeredPackages =
+                PM.FindPackagesForUser(
+                    string.Empty,
+                    packageFamily)
+                .ToList();
+
+            string expectedVersion = version.Name;
+            var existingVersion = registeredPackages.FirstOrDefault(
+                package =>
+                    IsPackageVersion(package, expectedVersion));
+
+            bool restoreOriginalRegistration = false;
+            string packageFullNameToRestore = null;
+            string packageManifestToRestore = null;
+            string packageFullNameToRemove = null;
+            string stagingDirectory =
+                version.GameDirectory +
+                ".extracting-" +
+                Guid.NewGuid().ToString("N");
+
+            try
+            {
+                StorageFolder sourceFolder;
+
+                if (existingVersion != null)
+                {
+                    sourceFolder =
+                        existingVersion.InstalledLocation;
+                }
+                else
+                {
+                    if (registeredPackages.Count > 1)
+                    {
+                        throw new InvalidOperationException(
+                            $"Multiple {packageFamily} versions are registered with Windows. The launcher cannot safely switch them temporarily.");
+                    }
+
+                    if (registeredPackages.Count == 1)
+                    {
+                        var packageToRestore = registeredPackages[0];
+                        packageFullNameToRestore =
+                            packageToRestore.Id.FullName;
+
+                        string snapshotDirectory =
+                            Path.Combine(
+                                MainDataModel.Default.FilePaths.VersionsFolder,
+                                "AppxBackups",
+                                "WindowsRegistrationSnapshots",
+                                SanitizePackageFolderName(
+                                    packageFullNameToRestore));
+                        packageManifestToRestore =
+                            Path.Combine(
+                                snapshotDirectory,
+                                MCVersionExtensions.MainifestFileName);
+
+                        if (Directory.Exists(snapshotDirectory) &&
+                            !File.Exists(packageManifestToRestore))
+                        {
+                            await DirectoryExtensions.DeleteAsync(
+                                snapshotDirectory,
+                                (current, total, phase) =>
+                                    ProgressWrapper(current, total, phase));
+                        }
+
+                        if (!Directory.Exists(snapshotDirectory))
+                        {
+                            MainDataModel.Default.ProgressBarState
+                                .SetProgressBarState(
+                                    LauncherState.isExtracting);
+                            MainDataModel.Default.ProgressBarState
+                                .SetProgressBarText(
+                                    "Preparing backup of the installed version...");
+
+                            await CopyGdkPackageDirectoryAsync(
+                                packageToRestore.InstalledLocation,
+                                snapshotDirectory,
+                                cancelSource.Token,
+                                CreatePackageCopyProgress());
+                        }
+
+                        if (!File.Exists(packageManifestToRestore))
+                        {
+                            throw new FileNotFoundException(
+                                "The existing Windows game registration cannot be safely restored because its package manifest could not be backed up. The existing registration has not been changed.",
+                                packageManifestToRestore);
+                        }
+
+                        MainDataModel.Default.ProgressBarState
+                            .SetProgressBarState(
+                                LauncherState.isRegisteringPackage);
+                        MainDataModel.Default.ProgressBarState
+                            .SetProgressBarText(
+                                packageFullNameToRestore);
+
+                        await DeploymentProgressWrapper(
+                            PM.RemovePackageAsync(
+                                packageFullNameToRestore,
+                                Constants.PackageRemovalOptions));
+
+                        restoreOriginalRegistration = true;
+                    }
+
+                    MainDataModel.Default.ProgressBarState
+                        .SetProgressBarState(
+                            LauncherState.isRegisteringPackage);
+                    MainDataModel.Default.ProgressBarState
+                        .SetProgressBarText(
+                            Path.GetFileName(packagePath));
+
+                    await DeploymentProgressWrapper(
+                        PM.AddPackageAsync(
+                            new Uri(packagePath),
+                            null,
+                            Constants.StorePackageDeploymentOptions));
+
+                    var deployedPackages =
+                        PM.FindPackagesForUser(
+                                string.Empty,
+                                packageFamily)
+                            .ToList();
+
+                    var deployedPackage =
+                        deployedPackages.FirstOrDefault(
+                            package =>
+                                IsPackageVersion(
+                                    package,
+                                    expectedVersion));
+
+                    if (deployedPackage == null &&
+                        deployedPackages.Count == 1)
+                    {
+                        deployedPackage = deployedPackages[0];
+                    }
+
+                    if (deployedPackage == null)
+                    {
+                        throw new InvalidOperationException(
+                            $"Windows deployed the GDK package, but its package identity could not be determined safely for temporary cleanup. Found {deployedPackages.Count} registered packages for {packageFamily}.");
+                    }
+
+                    packageFullNameToRemove =
+                        deployedPackage.Id.FullName;
+
+                    sourceFolder =
+                        deployedPackage.InstalledLocation;
+                }
+
+                sourceFolder =
+                    await FindGdkPayloadDirectoryAsync(sourceFolder);
+
+                MainDataModel.Default.ProgressBarState
+                    .SetProgressBarState(
+                        LauncherState.isExtracting);
+                MainDataModel.Default.ProgressBarState
+                    .SetProgressBarText(
+                        "Preparing local version files...");
+
+                await CopyGdkPackageDirectoryAsync(
+                    sourceFolder,
+                    stagingDirectory,
+                    cancelSource.Token,
+                    CreatePackageCopyProgress());
+
+                File.Copy(
+                    version.IdentificationPath,
+                    Path.Combine(
+                        stagingDirectory,
+                        MCVersionExtensions.IdentificationFilename),
+                    true);
+
+                string markerPath =
+                    Path.Combine(
+                        version.GameDirectory,
+                        "cdn_package.txt");
+
+                if (File.Exists(markerPath))
+                {
+                    File.Copy(
+                        markerPath,
+                        Path.Combine(
+                            stagingDirectory,
+                            "cdn_package.txt"),
+                        true);
+                }
+
+                if (!HasRunnableGdkPayload(stagingDirectory))
+                {
+                    throw new InvalidDataException(
+                        $"Windows deployed the GDK package, but its installed directory does not contain a runnable game at {sourceFolder.Path}.");
+                }
+
+                if (packageFullNameToRemove != null)
+                {
+                    MainDataModel.Default.ProgressBarState
+                        .SetProgressBarState(
+                            LauncherState.isRegisteringPackage);
+                    MainDataModel.Default.ProgressBarState
+                        .SetProgressBarText(
+                            packageFullNameToRemove);
+
+                    await DeploymentProgressWrapper(
+                        PM.RemovePackageAsync(
+                            packageFullNameToRemove,
+                            Constants.PackageRemovalOptions));
+
+                    packageFullNameToRemove = null;
+                }
+
+                if (Directory.Exists(version.GameDirectory))
+                {
+                    await DirectoryExtensions.DeleteAsync(
+                        version.GameDirectory,
+                        (current, total, phase) =>
+                            ProgressWrapper(current, total, phase));
+                }
+
+                Directory.Move(
+                    stagingDirectory,
+                    version.GameDirectory);
+
+                Trace.WriteLine(
+                    $"GDK package materialized locally at {version.GameDirectory}");
+            }
+            finally
+            {
+                Exception cleanupError = null;
+
+                try
+                {
+                    if (packageFullNameToRemove != null)
+                    {
+                        await DeploymentProgressWrapper(
+                            PM.RemovePackageAsync(
+                                packageFullNameToRemove,
+                                Constants.PackageRemovalOptions));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    cleanupError = new InvalidOperationException(
+                        $"Could not remove temporary Windows registration {packageFullNameToRemove}.",
+                        ex);
+                }
+
+                try
+                {
+                    if (restoreOriginalRegistration)
+                    {
+                        if (cleanupError != null)
+                        {
+                            throw cleanupError;
+                        }
+
+                        if (!File.Exists(packageManifestToRestore))
+                        {
+                            throw new FileNotFoundException(
+                                "The existing Windows game registration cannot be restored because its manifest is no longer available.",
+                                packageManifestToRestore);
+                        }
+
+                        MainDataModel.Default.ProgressBarState
+                            .SetProgressBarState(
+                                LauncherState.isRegisteringPackage);
+                        MainDataModel.Default.ProgressBarState
+                            .SetProgressBarText(
+                                packageFullNameToRestore);
+
+                        await DeploymentProgressWrapper(
+                            PM.RegisterPackageAsync(
+                                new Uri(packageManifestToRestore),
+                                null,
+                                Constants.PackageDeploymentOptions));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    cleanupError = new InvalidOperationException(
+                        $"Could not restore the pre-existing Windows registration {packageFullNameToRestore}. Its package files were preserved at {Path.GetDirectoryName(packageManifestToRestore)}.",
+                        ex);
+                }
+
+                if (Directory.Exists(stagingDirectory))
+                {
+                    await DirectoryExtensions.DeleteAsync(
+                        stagingDirectory,
+                        (current, total, phase) =>
+                            ProgressWrapper(current, total, phase));
+                }
+
+                if (cleanupError != null)
+                    throw cleanupError;
+            }
+        }
+
+        private async Task InstallGdkPackageAsync(
+            MCVersion version,
+            string packagePath)
+        {
+            if (!IsGdkPackageRegistered(version) &&
+                !File.Exists(packagePath))
+            {
+                throw new FileNotFoundException(
+                    $"The signed GDK package for {version.Name} was not found.",
+                    packagePath);
+            }
+
+            if (!IsGdkPackageRegistered(version))
+            {
+                MainDataModel.Default.ProgressBarState
+                    .SetProgressBarState(
+                        LauncherState.isRegisteringPackage);
+                MainDataModel.Default.ProgressBarState
+                    .SetProgressBarText(
+                        Path.GetFileName(packagePath));
+
+                Trace.WriteLine(
+                    $"Deploying signed GDK package through Windows: {packagePath}");
+
+                await DeploymentProgressWrapper(
+                    PM.AddPackageAsync(
+                        new Uri(packagePath),
+                        null,
+                        Constants.StorePackageDeploymentOptions));
+            }
+
+            if (!IsGdkPackageRegistered(version))
+            {
+                throw new InvalidDataException(
+                    $"Windows completed deployment but version {version.Name} is not registered for this user.");
+            }
+
+            await SaveGdkRegistrationMarkerAsync(version);
+
+            Trace.WriteLine(
+                $"GDK package {version.Name} is registered with Windows.");
+        }
+
+        private static async Task SaveGdkRegistrationMarkerAsync(
+            MCVersion version)
+        {
+            Directory.CreateDirectory(version.GameDirectory);
+
+            if (!File.Exists(version.IdentificationPath))
+            {
+                await File.WriteAllTextAsync(
+                    version.IdentificationPath,
+                    version.PackageID);
+            }
+
+            await File.WriteAllTextAsync(
+                Path.Combine(
+                    version.GameDirectory,
+                    MCVersionExtensions.GdkRegistrationMarkerFilename),
+                version.PackageID);
+        }
+
+        private bool IsGdkPackageRegistered(MCVersion version)
+        {
+            return FindRegisteredGdkPackage(version) != null;
+        }
+
+        private Package FindRegisteredGdkPackage(MCVersion version)
+        {
+            string packageFamily =
+                Constants.GetPackageFamily(version.Type);
+
+            return PM.FindPackagesForUser(
+                    string.Empty,
+                    packageFamily)
+                .FirstOrDefault(
+                    package =>
+                        IsPackageVersion(
+                            package,
+                            version.Name));
+        }
+
+        private async Task<bool> TryLaunchRegisteredGdkPackageAsync(
+            MCVersion version,
+            bool keepLauncherOpen)
+        {
+            var package =
+                FindRegisteredGdkPackage(version);
+            if (package == null)
+                return false;
+
+            var appEntries =
+                await package.GetAppListEntriesAsync();
+            var appEntry =
+                appEntries.FirstOrDefault(
+                    entry =>
+                        !string.IsNullOrWhiteSpace(
+                            entry.DisplayInfo.DisplayName) &&
+                        entry.DisplayInfo.DisplayName.Contains(
+                            "Minecraft",
+                            StringComparison.OrdinalIgnoreCase))
+                ?? appEntries.FirstOrDefault();
+
+            if (appEntry == null)
+            {
+                throw new InvalidOperationException(
+                    $"Windows did not expose an application entry for GDK version {version.Name}.");
+            }
+
+            Trace.WriteLine(
+                $"Launching registered GDK package {package.Id.FullName} via {appEntry.DisplayInfo.DisplayName}.");
+
+            if (!await appEntry.LaunchAsync())
+            {
+                throw new InvalidOperationException(
+                    $"Windows could not launch registered GDK version {version.Name}.");
+            }
+
+            await FinishLaunchAsync(keepLauncherOpen);
+            return true;
+        }
+
+        private static string SanitizePackageFolderName(string packageFullName)
+        {
+            char[] invalidCharacters =
+                Path.GetInvalidFileNameChars();
+
+            return new string(
+                packageFullName
+                    .Select(character =>
+                        invalidCharacters.Contains(character)
+                            ? '_'
+                            : character)
+                    .ToArray());
+        }
+
+        private static async Task<StorageFolder>
+            FindGdkPayloadDirectoryAsync(
+                StorageFolder installedLocation)
+        {
+            if (await HasRunnableGdkPayloadAsync(installedLocation))
+                return installedLocation;
+
+            var contentFolder =
+                (await installedLocation.GetFoldersAsync())
+                    .FirstOrDefault(
+                        folder => string.Equals(
+                            folder.Name,
+                            "Content",
+                            StringComparison.OrdinalIgnoreCase));
+
+            if (contentFolder != null &&
+                await HasRunnableGdkPayloadAsync(contentFolder))
+            {
+                return contentFolder;
+            }
+
+            throw new InvalidDataException(
+                $"The deployed GDK package has no runnable content in {installedLocation.Path} or its Content subdirectory.");
+        }
+
+        private static async Task<bool> HasRunnableGdkPayloadAsync(
+            StorageFolder directory)
+        {
+            var files = await directory.GetFilesAsync();
+            bool hasExecutable = files.Any(
+                file => string.Equals(
+                    file.Name,
+                    "Minecraft.Windows.exe",
+                    StringComparison.OrdinalIgnoreCase));
+            bool hasManifest = files.Any(
+                file => string.Equals(
+                    file.Name,
+                    MCVersionExtensions.MainifestFileName,
+                    StringComparison.OrdinalIgnoreCase));
+            bool hasGameConfig = files.Any(
+                file => string.Equals(
+                    file.Name,
+                    "MicrosoftGame.Config",
+                    StringComparison.OrdinalIgnoreCase));
+
+            return hasExecutable && (hasManifest || hasGameConfig);
+        }
+
+        private static bool HasRunnableGdkPayload(string directory)
+        {
+            return File.Exists(
+                       Path.Combine(
+                           directory,
+                           "Minecraft.Windows.exe")) &&
+                   (File.Exists(
+                        Path.Combine(
+                            directory,
+                            MCVersionExtensions.MainifestFileName)) ||
+                    File.Exists(
+                        Path.Combine(
+                            directory,
+                            "MicrosoftGame.Config")));
+        }
+
+        private static bool IsPackageVersion(
+            Windows.ApplicationModel.Package package,
+            string versionName)
+        {
+            if (!Version.TryParse(versionName, out var expected))
+            {
+                return false;
+            }
+
+            var actual = package.Id.Version;
+
+            bool exactMatch =
+                actual.Major == expected.Major &&
+                actual.Minor == expected.Minor &&
+                actual.Build == expected.Build &&
+                actual.Revision == expected.Revision;
+
+            if (exactMatch)
+                return true;
+
+            if (expected.Revision > 99)
+                return false;
+
+            string combinedBuild =
+                expected.Build.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture) +
+                expected.Revision.ToString(
+                    "D2",
+                    System.Globalization.CultureInfo.InvariantCulture);
+
+            return int.TryParse(
+                       combinedBuild,
+                       System.Globalization.NumberStyles.None,
+                       System.Globalization.CultureInfo.InvariantCulture,
+                       out int gdkBuild) &&
+                   actual.Major == expected.Major &&
+                   actual.Minor == expected.Minor &&
+                   actual.Build == gdkBuild &&
+                   actual.Revision == 0;
+        }
+
+        private static async Task CopyPackageDirectoryAsync(
+            StorageFolder sourceFolder,
+            string destinationDirectory,
+            CancellationToken cancellationToken,
+            IProgress<(long Current, long Total, string File)> progress)
+        {
+            var files =
+                new List<(StorageFile Source, string RelativePath, long Length)>();
+            var folders =
+                new Stack<(StorageFolder Folder, string RelativePath)>();
+            folders.Push((sourceFolder, string.Empty));
+            long totalBytes = 0;
+
+            while (folders.Count > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var current = folders.Pop();
+                foreach (StorageFile sourceFile in
+                    await current.Folder.GetFilesAsync())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var properties =
+                        await sourceFile.GetBasicPropertiesAsync();
+                    long length = checked((long)properties.Size);
+                    totalBytes = checked(totalBytes + length);
+
+                    files.Add((
+                        sourceFile,
+                        Path.Combine(
+                            current.RelativePath,
+                            sourceFile.Name),
+                        length));
+                }
+
+                foreach (StorageFolder childFolder in
+                    await current.Folder.GetFoldersAsync())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    folders.Push((
+                        childFolder,
+                        Path.Combine(
+                            current.RelativePath,
+                            childFolder.Name)));
+                }
+            }
+
+            Directory.CreateDirectory(destinationDirectory);
+            long completedBytes = 0;
+            byte[] buffer =
+                System.Buffers.ArrayPool<byte>.Shared.Rent(
+                    1024 * 1024);
+            var progressTimer = Stopwatch.StartNew();
+
+            try
+            {
+                foreach (var file in files)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    string destinationPath =
+                        Path.Combine(
+                            destinationDirectory,
+                            file.RelativePath);
+                    string parentDirectory =
+                        Path.GetDirectoryName(destinationPath);
+
+                    if (!string.IsNullOrEmpty(parentDirectory))
+                        Directory.CreateDirectory(parentDirectory);
+
+                    await using Stream source =
+                        await file.Source.OpenStreamForReadAsync();
+                    await using var destination = new FileStream(
+                        destinationPath,
+                        FileMode.Create,
+                        FileAccess.Write,
+                        FileShare.None,
+                        buffer.Length,
+                        FileOptions.Asynchronous |
+                        FileOptions.SequentialScan);
+
+                    long currentFileBytes = 0;
+
+                    while (true)
+                    {
+                        int bytesRead = await source.ReadAsync(
+                            buffer.AsMemory(),
+                            cancellationToken).ConfigureAwait(false);
+
+                        if (bytesRead == 0)
+                            break;
+
+                        await destination.WriteAsync(
+                            buffer.AsMemory(0, bytesRead),
+                            cancellationToken).ConfigureAwait(false);
+
+                        currentFileBytes += bytesRead;
+
+                        if (progressTimer.ElapsedMilliseconds >= 200)
+                        {
+                            progress?.Report((
+                                completedBytes + currentFileBytes,
+                                totalBytes,
+                                file.Source.Name));
+
+                            progressTimer.Restart();
+                        }
+                    }
+
+                    completedBytes += file.Length;
+
+                    if (progressTimer.ElapsedMilliseconds >= 200 ||
+                        completedBytes == totalBytes)
+                    {
+                        progress?.Report((
+                            completedBytes,
+                            totalBytes,
+                            file.Source.Name));
+
+                        progressTimer.Restart();
+                    }
+                }
+            }
+            finally
+            {
+                System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        private async Task CopyGdkPackageDirectoryAsync(
+            StorageFolder sourceFolder,
+            string destinationDirectory,
+            CancellationToken cancellationToken,
+            IProgress<(long Current, long Total, string File)> progress)
+        {
+            await CopyPackageDirectoryAsync(
+                sourceFolder,
+                destinationDirectory,
+                cancellationToken,
+                progress);
+        }
+
+        private static IProgress<(long Current, long Total, string File)>
+            CreatePackageCopyProgress()
+        {
+            return new Progress<(long Current, long Total, string File)>(
+                progress =>
+                {
+                    MainDataModel.Default.ProgressBarState
+                        .SetProgressBarText(progress.File);
+
+                    if (progress.Total > 0)
+                    {
+                        MainDataModel.Default.ProgressBarState
+                            .SetProgressBarProgress(
+                                progress.Current,
+                                progress.Total);
+                    }
+                });
         }
 
         /// <summary>
@@ -1998,13 +2525,14 @@ namespace BedrockLauncher.Handlers
 
         #region Helpers
 
-        protected async Task DeploymentProgressWrapper(
+        protected async Task<DeploymentResult> DeploymentProgressWrapper(
             IAsyncOperationWithProgress<
                 DeploymentResult,
                 DeploymentProgress> t)
         {
-            TaskCompletionSource<int> src =
-                new TaskCompletionSource<int>();
+            TaskCompletionSource<DeploymentResult> src =
+                new TaskCompletionSource<DeploymentResult>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
 
             t.Progress +=
                 (v, p) =>
@@ -2022,28 +2550,46 @@ namespace BedrockLauncher.Handlers
 
                     if (p == AsyncStatus.Error)
                     {
-                        string errorText =
-                            v.GetResults().ErrorText;
+                        try
+                        {
+                            string errorText =
+                                v.GetResults().ErrorText;
 
-                        Trace.WriteLine(
-                            "Deployment failed: " +
-                            errorText);
-
-                        src.SetException(
-                            new Exception(
+                            Trace.WriteLine(
                                 "Deployment failed: " +
-                                errorText));
+                                errorText);
+
+                            src.TrySetException(
+                                new Exception(
+                                    "Deployment failed: " +
+                                    errorText));
+                        }
+                        catch (Exception ex)
+                        {
+                            src.TrySetException(ex);
+                        }
+                    }
+                    else if (p == AsyncStatus.Canceled)
+                    {
+                        src.TrySetCanceled();
                     }
                     else
                     {
                         Trace.WriteLine(
                             "Deployment done: " + p);
 
-                        src.SetResult(1);
+                        try
+                        {
+                            src.TrySetResult(v.GetResults());
+                        }
+                        catch (Exception ex)
+                        {
+                            src.TrySetException(ex);
+                        }
                     }
                 };
 
-            await src.Task;
+            return await src.Task;
         }
 
         protected void ProgressWrapper(

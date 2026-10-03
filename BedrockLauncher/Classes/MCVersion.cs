@@ -77,9 +77,32 @@ namespace BedrockLauncher.Classes
             get
             {
                 Depends.On(GameDirectory);
-                return File.Exists(ExecutablePath)
+                bool hasLocalPayload =
+                    File.Exists(ExecutablePath)
                     || File.Exists(ManifestPath)
                     || File.Exists(Path.Combine(GameDirectory, "MicrosoftGame.Config"));
+
+                if (hasLocalPayload)
+                    return true;
+
+                if (PackageType != PackageType.GDK)
+                    return false;
+
+                string registrationMarkerPath =
+                    Path.Combine(
+                        GameDirectory,
+                        MCVersionExtensions.GdkRegistrationMarkerFilename);
+
+                return File.Exists(registrationMarkerPath) &&
+                       File.Exists(IdentificationPath) &&
+                       string.Equals(
+                           File.ReadAllText(IdentificationPath).Trim(),
+                           PackageID,
+                           StringComparison.OrdinalIgnoreCase) &&
+                       string.Equals(
+                           File.ReadAllText(registrationMarkerPath).Trim(),
+                           PackageID,
+                           StringComparison.OrdinalIgnoreCase);
             }
         }
 
@@ -96,15 +119,64 @@ namespace BedrockLauncher.Classes
         {
             get
             {
-                Depends.On(UUID, Name);
+                Depends.On(UUID, Name, PackageID, PackageType, Architecture);
                 string versionsFolder = MainDataModel.Default.FilePaths.VersionsFolder;
-                string preferred = Path.GetFullPath(Path.Combine(versionsFolder, GetVersionFolderName()));
+                string folderName = GetVersionFolderName();
+                bool hasConflictingVersion =
+                    MainDataModel.Default.Versions.Any(version =>
+                        version != this &&
+                        string.Equals(version.Name, Name, StringComparison.OrdinalIgnoreCase) &&
+                        (version.PackageType != PackageType ||
+                         !string.Equals(version.Architecture, Architecture, StringComparison.OrdinalIgnoreCase)));
+
+                string preferred = Path.GetFullPath(Path.Combine(
+                    versionsFolder,
+                    hasConflictingVersion
+                        ? $"{folderName}-{PackageType}-{SanitizeFolderName(Architecture ?? string.Empty)}"
+                        : folderName));
+
+                if (hasConflictingVersion &&
+                    !Directory.Exists(preferred) &&
+                    IsVersionFolderForThisPackage(Path.Combine(versionsFolder, folderName)))
+                {
+                    return Path.GetFullPath(Path.Combine(versionsFolder, folderName));
+                }
+
                 if (!Directory.Exists(preferred) && !string.IsNullOrEmpty(UUID) && UUID != Name)
                 {
                     string uuidFolder = Path.GetFullPath(Path.Combine(versionsFolder, SanitizeFolderName(UUID)));
                     if (Directory.Exists(uuidFolder)) return uuidFolder;
                 }
                 return preferred;
+            }
+        }
+
+        private bool IsVersionFolderForThisPackage(string folderPath)
+        {
+            string packageIdPath =
+                Path.Combine(folderPath, MCVersionExtensions.IdentificationFilename);
+
+            if (!File.Exists(packageIdPath))
+                return false;
+
+            try
+            {
+                return string.Equals(
+                    File.ReadAllText(packageIdPath).Trim(),
+                    PackageID,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch (IOException ex)
+            {
+                Trace.WriteLine(
+                    $"Could not inspect version folder identity at {packageIdPath}: {ex}");
+                return false;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Trace.WriteLine(
+                    $"Could not inspect version folder identity at {packageIdPath}: {ex}");
+                return false;
             }
         }
 
@@ -278,6 +350,8 @@ namespace BedrockLauncher.Classes
     {
         public const string IdentificationFilename = "PackageID.txt";
         public const string MainifestFileName = "AppxManifest.xml";
+        public const string GdkRegistrationMarkerFilename =
+            "gdk_windows_registered.txt";
 
         static Tuple<string, string, string> GetCommonPackageValues_CommonFunctionality(string manifestXml)
         {

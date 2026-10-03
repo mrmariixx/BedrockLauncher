@@ -19,6 +19,8 @@ namespace BedrockLauncher.Classes
         public string Name { get; set; }
         public string UUID { get; set; }
         public string ProfilePath { get; set; }
+        public string MicrosoftAccountId { get; set; }
+        public string MicrosoftAccountName { get; set; }
         public ObservableCollection<BLInstallation> Installations { get; set; } = new ObservableCollection<BLInstallation>();
 
 

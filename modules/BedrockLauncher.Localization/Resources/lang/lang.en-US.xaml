@@ -214,10 +214,10 @@
 
     <v:String x:Key="AcountsSettingsPage_SelectedAccount_Subtitle">SELECTED ACCOUNT</v:String>
     <v:String x:Key="AcountsSettingsPage_InsiderHub_Text">INSIDER SETTINGS</v:String>
-    <v:String x:Key="AcountsSettingsPage_InsiderHubNew_Text">Normal Settings</v:String>
-    <v:String x:Key="AcountsSettingsPage_InsiderHubLegacy_Text">Legacy Settings</v:String>
-    <v:String x:Key="AcountsSettingsPage_ManageAccounts_Text">Manage Accounts</v:String>
-    <v:String x:Key="AcountsSettingsPage_AccountSettings_Text">ACCOUNT SETTINGS</v:String>
+    <v:String x:Key="AcountsSettingsPage_InsiderHubNew_Text">Insider Hub</v:String>
+    <v:String x:Key="AcountsSettingsPage_InsiderHubLegacy_Text">Legacy Insider Hub</v:String>
+    <v:String x:Key="AcountsSettingsPage_ManageAccounts_Text">Manage Microsoft accounts</v:String>
+    <v:String x:Key="AcountsSettingsPage_AccountSettings_Text">MICROSOFT ACCOUNT SETTINGS</v:String>
 
     <!--#endregion-->
 
@@ -325,6 +325,9 @@
     <v:String x:Key="NewProfile_CreateProfileButton">Create</v:String>
     <v:String x:Key="NewProfile_EditProfileButton">Save</v:String>
     <v:String x:Key="NewProfile_EditProfileSubTitle">Edit profile</v:String>
+    <v:String x:Key="NewProfile_MicrosoftAccountNotConnected">Microsoft account is optional</v:String>
+    <v:String x:Key="NewProfile_MicrosoftSignInButton">Sign in with Microsoft</v:String>
+    <v:String x:Key="NewProfile_MicrosoftChangeAccountButton">Change Microsoft account</v:String>
 
     <!--#endregion-->
 
@@ -553,4 +556,3 @@
     <v:String x:Key="PackageHandler_BetaAuthFailed">Failed to authenticate for beta downloads. Ensure your insider account is configured.</v:String>
     <v:String x:Key="BLProfileList_ProfileImageCopyFailed">Could not copy the selected profile image.</v:String>
 </ResourceDictionary>
-

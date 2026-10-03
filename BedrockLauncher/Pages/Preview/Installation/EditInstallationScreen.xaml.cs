@@ -88,7 +88,8 @@ namespace BedrockLauncher.Pages.Preview.Installation
             if (e.Item is MCVersion)
             {
                 var version = (e.Item as MCVersion);
-                if (VersionDbExtensions.DoesVersionArchMatch(Constants.CurrentArchitecture, version.Architecture)) e.Accepted = true;
+                if (version.PackageType == BedrockLauncher.UpdateProcessor.Enums.PackageType.UWP) e.Accepted = true;
+                else if (VersionDbExtensions.DoesVersionArchMatch(Constants.CurrentArchitecture, version.Architecture)) e.Accepted = true;
                 else if (ViewModel.SelectedVersionUUID == version.UUID) e.Accepted = true;
                 else e.Accepted = false;
             }

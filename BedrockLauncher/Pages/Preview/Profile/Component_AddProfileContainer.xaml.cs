@@ -1,4 +1,5 @@
 ﻿using BedrockLauncher.Classes;
+using BedrockLauncher.Handlers;
 using BedrockLauncher.ViewModels;
 using System;
 using System.Windows;
@@ -32,9 +33,14 @@ namespace BedrockLauncher.Pages.Preview.Profile
             ViewModel.ProfileUUID = profileToEdit.UUID;
             ViewModel.ProfileImage = profileToEdit.ImagePath;
             ViewModel.ProfileDirectory = profileToEdit.ProfilePath;
+            ViewModel.MicrosoftAccountId =
+                profileToEdit.MicrosoftAccountId ?? string.Empty;
+            ViewModel.MicrosoftAccountName =
+                profileToEdit.MicrosoftAccountName ?? string.Empty;
 
             CreateProfileSubtitle.Text = this.FindResource("NewProfile_EditProfileSubTitle") as string;
             CreateProfileButtonText.Text = this.FindResource("NewProfile_EditProfileButton") as string;
+            UpdateMicrosoftAccountStatus();
 
         }
 
@@ -64,6 +70,7 @@ namespace BedrockLauncher.Pages.Preview.Profile
         {
             if (MainDataModel.Default.Config.Profile_Edit(ViewModel.ProfileName, ViewModel.ProfileUUID, ViewModel.ProfileDirectory, ViewModel.ProfileImage))
             {
+                SaveMicrosoftAccountToProfile();
                 Confirm?.Invoke(this, EventArgs.Empty);
             }
             else
@@ -76,6 +83,7 @@ namespace BedrockLauncher.Pages.Preview.Profile
         {
             if (MainDataModel.Default.Config.Profile_Add(ViewModel.ProfileName, ViewModel.ProfileUUID, ViewModel.ProfileDirectory, ViewModel.ProfileImage))
             {
+                SaveMicrosoftAccountToProfile();
                 Confirm?.Invoke(this, EventArgs.Empty);
             }
             else
@@ -83,6 +91,73 @@ namespace BedrockLauncher.Pages.Preview.Profile
                 CreateProfileText.SetResourceReference(TextBlock.TextProperty, "NewProfile_CreateProfileText_Error");
                 CreateProfileText.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Red);
             }
+        }
+
+        private async void MicrosoftAccountButton_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            MicrosoftAccountButton.IsEnabled = false;
+
+            try
+            {
+                var identity =
+                    await MicrosoftAccountAuthentication.SignInAsync();
+                if (identity == null)
+                    return;
+
+                ViewModel.MicrosoftAccountId = identity.Id;
+                ViewModel.MicrosoftAccountName = identity.UserName;
+                UpdateMicrosoftAccountStatus();
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(
+                    $"Microsoft sign-in failed: {ex.Message}",
+                    "Microsoft account",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Error);
+            }
+            finally
+            {
+                MicrosoftAccountButton.IsEnabled = true;
+            }
+        }
+
+        private void SaveMicrosoftAccountToProfile()
+        {
+            var profile =
+                MainDataModel.Default.Config.profiles[
+                    ViewModel.ProfileUUID];
+            profile.MicrosoftAccountId =
+                ViewModel.MicrosoftAccountId;
+            profile.MicrosoftAccountName =
+                ViewModel.MicrosoftAccountName;
+            MainDataModel.Default.Config.Save();
+        }
+
+        private void UpdateMicrosoftAccountStatus()
+        {
+            if (string.IsNullOrWhiteSpace(
+                    ViewModel.MicrosoftAccountName))
+            {
+                MicrosoftAccountStatusText.SetResourceReference(
+                    TextBlock.TextProperty,
+                    "NewProfile_MicrosoftAccountNotConnected");
+                MicrosoftAccountButton.SetResourceReference(
+                    ContentControl.ContentProperty,
+                    "NewProfile_MicrosoftSignInButton");
+                return;
+            }
+
+            MicrosoftAccountStatusText.Text =
+                $"Microsoft: {ViewModel.MicrosoftAccountName}";
+            MicrosoftAccountButton.SetResourceReference(
+                ContentControl.ContentProperty,
+                "NewProfile_MicrosoftChangeAccountButton");
         }
 
         private void ProfileNameTextbox_TextChanged(object sender, TextChangedEventArgs e) => EvaluateDirectory();

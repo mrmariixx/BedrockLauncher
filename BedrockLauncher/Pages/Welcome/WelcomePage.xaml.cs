@@ -6,12 +6,10 @@ using System.Windows.Controls;
 
 namespace BedrockLauncher.Pages.Welcome
 {
-    /// <summary>
-    /// Логика взаимодействия для WelcomePage.xaml
-    /// </summary>
     public partial class WelcomePage : Page
     {
         public WelcomePagesSwitcher pageSwitcher = new WelcomePagesSwitcher();
+
         public WelcomePage()
         {
             InitializeComponent();
@@ -26,8 +24,11 @@ namespace BedrockLauncher.Pages.Welcome
         public static WelcomePageOne pageOne;
         public static WelcomePageTwo pageTwo;
         public static WelcomePageThree pageThree;
+        public static WelcomePageFour pageFour;
         public static WelcomePageFive pageFive;
+
         public void Init(WelcomePage page) => welcomePage = page;
+
         public void MoveToPage(byte page, bool backup = false)
         {
             switch (page)
@@ -40,6 +41,9 @@ namespace BedrockLauncher.Pages.Welcome
                     break;
                 case 3:
                     Page3();
+                    break;
+                case 4:
+                    Page4();
                     break;
                 case 5:
                     Page5();
@@ -56,7 +60,10 @@ namespace BedrockLauncher.Pages.Welcome
                     pageOne = new WelcomePageOne();
                     welcomePage.WelcomePageFrame.Navigate(pageOne);
                 }
-                else { welcomePage.WelcomePageFrame.Navigate(pageOne); }
+                else
+                {
+                    welcomePage.WelcomePageFrame.Navigate(pageOne);
+                }
             }
 
             void Page2()
@@ -66,7 +73,10 @@ namespace BedrockLauncher.Pages.Welcome
                     pageTwo = new WelcomePageTwo();
                     welcomePage.WelcomePageFrame.Navigate(pageTwo);
                 }
-                else { welcomePage.WelcomePageFrame.Navigate(pageTwo); }
+                else
+                {
+                    welcomePage.WelcomePageFrame.Navigate(pageTwo);
+                }
             }
 
             void Page3()
@@ -75,7 +85,7 @@ namespace BedrockLauncher.Pages.Welcome
                 {
                     Properties.LauncherSettings.Default.CurrentProfileUUID = MainDataModel.Default.Config.profiles.FirstOrDefault().Key;
                     Properties.LauncherSettings.Default.Save();
-                    MoveToPage(5);
+                    MoveToPage(4);
                 }
                 else
                 {
@@ -84,11 +94,25 @@ namespace BedrockLauncher.Pages.Welcome
                         pageThree = new WelcomePageThree();
                         welcomePage.WelcomePageFrame.Navigate(pageThree);
                     }
-                    else { welcomePage.WelcomePageFrame.Navigate(pageThree); }
+                    else
+                    {
+                        welcomePage.WelcomePageFrame.Navigate(pageThree);
+                    }
                 }
             }
 
-
+            void Page4()
+            {
+                if (pageFour == null)
+                {
+                    pageFour = new WelcomePageFour();
+                    welcomePage.WelcomePageFrame.Navigate(pageFour);
+                }
+                else
+                {
+                    welcomePage.WelcomePageFrame.Navigate(pageFour);
+                }
+            }
 
             void Page5()
             {
@@ -97,7 +121,10 @@ namespace BedrockLauncher.Pages.Welcome
                     pageFive = new WelcomePageFive();
                     welcomePage.WelcomePageFrame.Navigate(pageFive);
                 }
-                else { welcomePage.WelcomePageFrame.Navigate(pageFive); }
+                else
+                {
+                    welcomePage.WelcomePageFrame.Navigate(pageFive);
+                }
             }
 
             void Page6(bool _backup)
@@ -106,6 +133,7 @@ namespace BedrockLauncher.Pages.Welcome
                 {
                     Task.Run(Handlers.BackupHandler.BackupAllSaveData);
                 }
+
                 Task.Run(Program.OnApplicationRefresh);
                 ViewModels.MainViewModel.Default.SetOverlayFrame(null, true);
                 Properties.LauncherSettings.Default.IsFirstLaunch = false;

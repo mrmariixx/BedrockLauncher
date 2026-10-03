@@ -66,7 +66,7 @@ extern "C" __declspec(dllexport) int  __stdcall GetWUToken(int userIndex, wchar_
 	//wprintf(L"Account count = %i\n", accounts.Size());
 	if (accounts.Size() == 0)
 		return WU_NO_ACCOUNT;
-	if (accounts.Size() < userIndex)
+	if (userIndex < 0 || static_cast<uint32_t>(userIndex) >= accounts.Size())
 		return WU_NO_ACCOUNT;
 	auto accountInfo = accounts.GetAt(userIndex);
 	//wprintf(L"ID = %s\n", accountInfo.Id().c_str());
@@ -74,6 +74,8 @@ extern "C" __declspec(dllexport) int  __stdcall GetWUToken(int userIndex, wchar_
 	auto accountProvider = WebAuthenticationCoreManager::FindAccountProviderAsync(L"https://login.microsoft.com", L"consumers").get();
 	WebTokenRequest request(accountProvider, L"service::dcat.update.microsoft.com::MBI_SSL", L"{28520974-CE92-4F36-A219-3F255AF7E61E}");
 	auto result = WebAuthenticationCoreManager::GetTokenSilentlyAsync(request, accountInfo).get();
+	if (result.ResponseStatus() != WebTokenRequestStatus::Success || result.ResponseData().Size() == 0)
+		return WU_NO_ACCOUNT;
 	auto token = result.ResponseData().GetAt(0).Token();
 	//wprintf(L"Token = %s\n", token.c_str());
 	auto tokenBinary = CryptographicBuffer::ConvertStringToBinary(token, BinaryStringEncoding::Utf16LE);

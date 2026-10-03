@@ -131,8 +131,12 @@ namespace BedrockLauncher.UpdateProcessor.Databases
                     architecture,
                     packageType);
 
-                if (!list.Any(x => x.uuid == parsedVersion.uuid))
+                if (!list.Any(x =>
+                    x.uuid == parsedVersion.uuid &&
+                    x.packageType == parsedVersion.packageType))
+                {
                     list.Add(parsedVersion);
+                }
             }
 
             SortVersions();
@@ -173,8 +177,12 @@ namespace BedrockLauncher.UpdateProcessor.Databases
                     architecture,
                     PackageType.UWP);
 
-                if (!list.Any(x => x.uuid == info.uuid))
+                if (!list.Any(x =>
+                    x.uuid == info.uuid &&
+                    x.packageType == info.packageType))
+                {
                     list.Add(info);
+                }
             }
 
             SortVersions();

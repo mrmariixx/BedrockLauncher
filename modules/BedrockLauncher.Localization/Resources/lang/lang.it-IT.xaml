@@ -209,12 +209,12 @@
 
     <!--#region AcountsSettingsPage -->
 
-    <v:String x:Key="AcountsSettingsPage_SelectedAccount_Subtitle">SELECTED ACCOUNT</v:String>
-    <v:String x:Key="AcountsSettingsPage_InsiderHub_Text">INSIDER SETTINGS</v:String>
-    <v:String x:Key="AcountsSettingsPage_InsiderHubNew_Text">Normal Settings</v:String>
-    <v:String x:Key="AcountsSettingsPage_InsiderHubLegacy_Text">Legacy Settings</v:String>
-    <v:String x:Key="AcountsSettingsPage_ManageAccounts_Text">Manage Accounts</v:String>
-    <v:String x:Key="AcountsSettingsPage_AccountSettings_Text">ACCOUNT SETTINGS</v:String>
+    <v:String x:Key="AcountsSettingsPage_SelectedAccount_Subtitle">ACCOUNT SELEZIONATO</v:String>
+    <v:String x:Key="AcountsSettingsPage_InsiderHub_Text">IMPOSTAZIONI INSIDER</v:String>
+    <v:String x:Key="AcountsSettingsPage_InsiderHubNew_Text">Xbox Insider Hub</v:String>
+    <v:String x:Key="AcountsSettingsPage_InsiderHubLegacy_Text">Xbox Insider Hub Legacy</v:String>
+    <v:String x:Key="AcountsSettingsPage_ManageAccounts_Text">Gestisci account Microsoft</v:String>
+    <v:String x:Key="AcountsSettingsPage_AccountSettings_Text">IMPOSTAZIONI ACCOUNT MICROSOFT</v:String>
 
     <!--#endregion-->
 
@@ -324,6 +324,9 @@
     <v:String x:Key="NewProfile_CreateProfileButton">Create</v:String>
     <v:String x:Key="NewProfile_EditProfileButton">Save</v:String>
     <v:String x:Key="NewProfile_EditProfileSubTitle">Edit profile</v:String>
+    <v:String x:Key="NewProfile_MicrosoftAccountNotConnected">Account Microsoft facoltativo</v:String>
+    <v:String x:Key="NewProfile_MicrosoftSignInButton">Accedi con Microsoft</v:String>
+    <v:String x:Key="NewProfile_MicrosoftChangeAccountButton">Cambia account Microsoft</v:String>
 
     <!--#endregion-->
 
@@ -554,4 +557,3 @@ turned off, try turning the back on and search again</v:String>
     <v:String x:Key="PackageHandler_BetaAuthFailed">Autenticazione beta non riuscita. Controlla l'account Insider.</v:String>
     <v:String x:Key="BLProfileList_ProfileImageCopyFailed">Impossibile copiare l'immagine del profilo selezionata.</v:String>
 </ResourceDictionary>
-

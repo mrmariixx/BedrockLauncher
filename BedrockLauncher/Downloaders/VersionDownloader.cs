@@ -66,6 +66,11 @@ namespace BedrockLauncher.Downloaders
             }
         }
 
+        public void SetMSAUserToken(string token)
+        {
+            VersionDB.SetMSAUserToken(token);
+        }
+
         public async Task UpdateVersionList(
             ObservableCollection<MCVersion> versions,
             bool OnLoad = false)
@@ -79,12 +84,16 @@ namespace BedrockLauncher.Downloaders
 
             int userIndex =
                 Properties.LauncherSettings.Default.CurrentInsiderAccountIndex;
+            string microsoftAccountId =
+                MainDataModel.Default.Config.CurrentProfile
+                    ?.MicrosoftAccountId;
 
             VersionDB.Init(
                 userIndex,
                 winstoreDBFile,
                 communityDBFile,
-                gdkLinksDBFile);
+                gdkLinksDBFile,
+                microsoftAccountId);
 
             await VersionDB.LoadVersions(
                 true,
