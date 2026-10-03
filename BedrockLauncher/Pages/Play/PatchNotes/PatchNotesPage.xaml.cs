@@ -1,12 +1,12 @@
-﻿using BedrockLauncher.Classes.Launcher;
-using BedrockLauncher.Downloaders;
-using System;
-using System.Diagnostics;
+﻿using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using BedrockLauncher.Classes.Launcher;
+using System.Diagnostics;
+using BedrockLauncher.Downloaders;
 
 namespace BedrockLauncher.Pages.Play.PatchNotes
 {
@@ -27,12 +27,15 @@ namespace BedrockLauncher.Pages.Play.PatchNotes
             InitializeComponent();
         }
 
-        private async Task RefreshPatchNotes(bool force) => await this.Dispatcher.InvokeAsync(() =>
-                                                                     {
-                                                                         if (force) Task.Run(downloader.UpdateList);
-                                                                         var view = CollectionViewSource.GetDefaultView(PatchNotesList.ItemsSource) as CollectionView;
-                                                                         if (view != null) view.Filter = Filter_PatchNotes;
-                                                                     });
+        private async Task RefreshPatchNotes(bool force)
+        {
+            await this.Dispatcher.InvokeAsync(() =>
+            {
+                if (force) Task.Run(downloader.UpdateList);
+                var view = CollectionViewSource.GetDefaultView(PatchNotesList.ItemsSource) as CollectionView;
+                if (view != null) view.Filter = Filter_PatchNotes;
+            });
+        } 
 
         private void Page_Loaded(object sender, RoutedEventArgs e)
         {
@@ -56,9 +59,15 @@ namespace BedrockLauncher.Pages.Play.PatchNotes
             else return false;
         }
 
-        private void Button_Click(object sender, RoutedEventArgs e) => Task.Run(() => RefreshPatchNotes(true));
+        private void Button_Click(object sender, RoutedEventArgs e)
+        {
+            Task.Run(() => RefreshPatchNotes(true));
+        }
 
-        private void RefreshList(object sender, RoutedEventArgs e) => Task.Run(() => RefreshPatchNotes(false));
+        private void RefreshList(object sender, RoutedEventArgs e)
+        {
+            Task.Run(() => RefreshPatchNotes(false));
+        }
 
         private void PatchNotesList_KeyUp(object sender, KeyEventArgs e)
         {

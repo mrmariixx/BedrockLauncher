@@ -1,9 +1,9 @@
-﻿using BedrockLauncher.ViewModels;
-using System;
+﻿using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Animation;
+using BedrockLauncher.ViewModels;
 
 namespace BedrockLauncher.Pages.General
 {
@@ -17,7 +17,10 @@ namespace BedrockLauncher.Pages.General
             InitializeComponent();
             this.Visibility = Visibility.Collapsed;
         }
-        public void ShowUpdateButton() => Dispatcher.Invoke(ShowAdvancementButton);
+        public void ShowUpdateButton()
+        {
+            Dispatcher.Invoke(ShowAdvancementButton);
+        }
         public async void ShowUpdateButton(int time = 5000)
         {
             ShowAdvancementButton();
@@ -73,8 +76,14 @@ namespace BedrockLauncher.Pages.General
 
         }
 
-        private void Button_Click(object sender, RoutedEventArgs e) => MainDataModel.Updater.UpdateButton_Click(sender, e);
+        private void Button_Click(object sender, RoutedEventArgs e)
+        {
+            MainDataModel.Updater.UpdateButton_Click(sender, e);
+        }
 
-        private void Button_Click_1(object sender, RoutedEventArgs e) => Dispatcher.Invoke(HideAdvancementButton);
+        private void Button_Click_1(object sender, RoutedEventArgs e)
+        {
+            Dispatcher.Invoke(HideAdvancementButton);
+        }
     }
 }

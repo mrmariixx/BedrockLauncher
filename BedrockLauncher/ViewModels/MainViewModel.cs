@@ -59,7 +59,10 @@ namespace BedrockLauncher.ViewModels
             }
         }
 
-        public bool IsErrorDialogEmpty() => ErrorFrame_Content == null;
+        public bool IsErrorDialogEmpty()
+        {
+            return ErrorFrame_Content == null;
+        }
 
         public void AttemptClose(object sender, System.ComponentModel.CancelEventArgs e)
         {
@@ -82,36 +85,42 @@ namespace BedrockLauncher.ViewModels
             Application.Current.Dispatcher.Invoke(Keyboard.ClearFocus);
             PageAnimator.FrameSet_Dialog(ErrorFrame, content);
         }
-        public async Task ShowWaitingDialog(Func<Task> action) => await Application.Current.Dispatcher.Invoke(async () =>
-                                                                           {
-                                                                               SetDialogFrame(new WaitingPage());
-                                                                               await action();
-                                                                               SetDialogFrame(null);
-                                                                           });
-        public async void LauncherCanNotCloseDialog(Action successAction) => await Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(async () =>
-                                                                                      {
-                                                                                          var title = BedrockLauncher.Localization.Language.LanguageManager.GetResource("Dialog_CloseGame_Title") as string;
-                                                                                          var content = BedrockLauncher.Localization.Language.LanguageManager.GetResource("Dialog_CloseGame_Text") as string;
+        public async Task ShowWaitingDialog(Func<Task> action)
+        {
+            await Application.Current.Dispatcher.Invoke(async () =>
+            {
+                SetDialogFrame(new WaitingPage());
+                await action();
+                SetDialogFrame(null);
+            });
+        }
+        public async void LauncherCanNotCloseDialog(Action successAction)
+        {
+            await Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(async () =>
+            {
+                var title = BedrockLauncher.Localization.Language.LanguageManager.GetResource("Dialog_CloseGame_Title") as string;
+                var content = BedrockLauncher.Localization.Language.LanguageManager.GetResource("Dialog_CloseGame_Text") as string;
 
-                                                                                          var result = await DialogPrompt.ShowDialog_YesNoCancel(title, content);
+                var result = await DialogPrompt.ShowDialog_YesNoCancel(title, content);
 
-                                                                                          if (result == System.Windows.Forms.DialogResult.Yes)
-                                                                                          {
-                                                                                              await MainDataModel.Default.PackageManager.ClosePackage();
-                                                                                              MainDataModel.Default.AllowedToCloseWithGameOpen = true;
-                                                                                              if (successAction != null) successAction.Invoke();
-                                                                                          }
-                                                                                          else if (result == System.Windows.Forms.DialogResult.No)
-                                                                                          {
-                                                                                              MainDataModel.Default.AllowedToCloseWithGameOpen = true;
-                                                                                              if (successAction != null) successAction.Invoke();
-                                                                                          }
-                                                                                          else if (result == System.Windows.Forms.DialogResult.Cancel)
-                                                                                          {
-                                                                                              MainDataModel.Default.AllowedToCloseWithGameOpen = false;
-                                                                                          }
+                if (result == System.Windows.Forms.DialogResult.Yes)
+                {
+                    await MainDataModel.Default.PackageManager.ClosePackage();
+                    MainDataModel.Default.AllowedToCloseWithGameOpen = true;
+                    if (successAction != null) successAction.Invoke();
+                }
+                else if (result == System.Windows.Forms.DialogResult.No)
+                {
+                    MainDataModel.Default.AllowedToCloseWithGameOpen = true;
+                    if (successAction != null) successAction.Invoke();
+                }
+                else if (result == System.Windows.Forms.DialogResult.Cancel)
+                {
+                   MainDataModel.Default.AllowedToCloseWithGameOpen = false;
+                }
 
-                                                                                      }));
+            }));
+        }
 
         #endregion
 
@@ -145,10 +154,22 @@ namespace BedrockLauncher.ViewModels
         {
             get { Depends.On(MainWindow); return MainWindow.MainPage.ProgressBarGrid; }
         }
-        public async Task<System.Windows.Forms.DialogResult> ShowDialog_YesNo(string title, string content) => await MainViewModel.Default.ShowDialog_YesNo(title, content);
-        public void errormsg(string dialogTitle, string dialogText, Exception ex2) => ErrorScreenShow.errormsg(dialogTitle, dialogText, ex2);
-        public Task<bool> exceptionmsg(Exception ex) => ErrorScreenShow.exceptionmsg(ex);
-        public void UpdateAnimatePageTransitions(bool value) => Navigator.AnimatePageTransitions = value;
+        public async Task<System.Windows.Forms.DialogResult> ShowDialog_YesNo(string title, string content)
+        {
+            return await MainViewModel.Default.ShowDialog_YesNo(title, content);
+        }
+        public void errormsg(string dialogTitle, string dialogText, Exception ex2)
+        {
+            ErrorScreenShow.errormsg(dialogTitle, dialogText, ex2);
+        }
+        public Task<bool> exceptionmsg(Exception ex)
+        {
+            return ErrorScreenShow.exceptionmsg(ex);
+        }
+        public void UpdateAnimatePageTransitions(bool value)
+        {
+            Navigator.AnimatePageTransitions = value;
+        }
 
         #endregion
     }

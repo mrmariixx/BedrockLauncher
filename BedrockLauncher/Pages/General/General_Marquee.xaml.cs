@@ -36,7 +36,10 @@ namespace BedrockLauncher.Pages.General
             InitializeComponent();
         }
 
-        public override void OnApplyTemplate() => _contentPresenter = Template.FindName("PART_Content", this) as FrameworkElement;
+        public override void OnApplyTemplate()
+        {
+            _contentPresenter = Template.FindName("PART_Content", this) as FrameworkElement;
+        }
 
         private void Animate()
         {
@@ -66,15 +69,24 @@ namespace BedrockLauncher.Pages.General
             }
         }
 
-        private void ContentControl_Loaded(object sender, RoutedEventArgs e) => Animate();
+        private void ContentControl_Loaded(object sender, RoutedEventArgs e)
+        {
+            Animate();
+        }
 
-        private void ContentControl_SizeChanged(object sender, SizeChangedEventArgs e) => Animate();
+        private void ContentControl_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            Animate();
+        }
 
         private void ContentControl_LayoutUpdated(object sender, EventArgs e)
         {
 
         }
 
-        private void PART_Content_SizeChanged(object sender, SizeChangedEventArgs e) => Animate();
+        private void PART_Content_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            Animate();
+        }
     }
 }

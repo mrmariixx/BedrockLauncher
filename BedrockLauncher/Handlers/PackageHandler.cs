@@ -1395,7 +1395,7 @@ namespace BedrockLauncher.Handlers
   </Resources>
   <Applications>
     <Application Id=""App"" Executable=""Minecraft.Windows.exe"" EntryPoint=""Minecraft_Win10.App"">
-      <uap:VisualElements DisplayName=""{displayName}"" Square150x150Logo=""{square150}"" Square44x44Logo=""{square44}"" Description=""{description}"" ForegroundText=""light"" BackgroundColor=""#000000"">
+      <uap:VisualElements DisplayName=""{displayName}"" Square150x150Logo=""{square150}"" Square44x44Logo=""{square44}"" Description=""{description}"" ForegroundText=""light"" BackgroundColor=""transparent"">
         <uap:SplashScreen Image=""{splashImage}"" />
       </uap:VisualElements>
     </Application>
@@ -1613,6 +1613,10 @@ namespace BedrockLauncher.Handlers
             }
         }
 
+        /// <summary>
+        /// Unregisters Minecraft packages with safe error handling.
+        /// FIX #1: Gracefully handle packages that are no longer installed for current user.
+        /// </summary>
         private async Task UnregisterPackage(
             MCVersion v,
             bool keepVersion = false,
@@ -1671,10 +1675,23 @@ namespace BedrockLauncher.Handlers
                             .SetProgressBarState(
                                 LauncherState.isRemovingPackage);
 
-                        await DeploymentProgressWrapper(
-                            PM.RemovePackageAsync(
-                                package.Id.FullName,
-                                Constants.PackageRemovalOptions));
+                        try
+                        {
+                            await DeploymentProgressWrapper(
+                                PM.RemovePackageAsync(
+                                    package.Id.FullName,
+                                    Constants.PackageRemovalOptions));
+                        }
+                        catch (Exception ex)
+                        {
+                            // FIX #1: Package may no longer be installed for current user
+                            Trace.WriteLine(
+                                $"Warning: Could not remove package {package.Id.FullName}: {ex.Message}. " +
+                                "Package may already be uninstalled or inaccessible. Continuing...");
+                            
+                            // Continue with next package instead of crashing
+                            continue;
+                        }
                     }
                 }
             }

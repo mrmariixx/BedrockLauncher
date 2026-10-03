@@ -33,7 +33,7 @@ namespace BedrockLauncher.Pages.General
             {
                 return CalculateActualWidth();
             }
-        }
+        } 
         public double CubeWidth
         {
             get

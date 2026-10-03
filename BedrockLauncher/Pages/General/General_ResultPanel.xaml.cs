@@ -24,7 +24,7 @@ namespace BedrockLauncher.Pages.General
             set
             {
                 _PanelType = value;
-                if (IsLoaded) UpdatePanel(value);
+               if (IsLoaded) UpdatePanel(value);
             }
         }
 
@@ -56,6 +56,9 @@ namespace BedrockLauncher.Pages.General
             }
         }
 
-        private void Grid_Loaded(object sender, RoutedEventArgs e) => UpdatePanel(_PanelType);
+        private void Grid_Loaded(object sender, RoutedEventArgs e)
+        {
+            UpdatePanel(_PanelType);
+        }
     }
 }

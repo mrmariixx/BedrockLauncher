@@ -27,9 +27,9 @@ namespace BedrockLauncher.Pages.General
 
         public double BorderSize
         {
-            get { return (double)GetValue(BorderSizeProperty); }
-            set
-            {
+            get  { return (double)GetValue(BorderSizeProperty); }
+            set 
+            { 
                 SetValue(BorderSizeProperty, value);
                 OnPropertyChanged(nameof(BorderSize));
                 OnPropertyChanged(nameof(BorderSizeG));
@@ -39,8 +39,8 @@ namespace BedrockLauncher.Pages.General
         public GridLength BorderSizeG
         {
             get { return new GridLength(BorderSize); }
-            set
-            {
+            set 
+            { 
                 SetValue(BorderSizeProperty, value.Value);
                 OnPropertyChanged(nameof(BorderSize));
                 OnPropertyChanged(nameof(BorderSizeG));
@@ -50,8 +50,8 @@ namespace BedrockLauncher.Pages.General
         public SolidColorBrush BorderColor
         {
             get { return (SolidColorBrush)GetValue(BorderColorProperty); }
-            set
-            {
+            set 
+            { 
                 SetValue(BorderColorProperty, value);
                 OnPropertyChanged(nameof(BorderColor));
             }

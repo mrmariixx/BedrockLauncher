@@ -1,10 +1,10 @@
-﻿using BedrockLauncher.Classes.Launcher;
-using BedrockLauncher.UI.Pages.Preview;
-using System;
+﻿using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using BedrockLauncher.Classes.Launcher;
+using BedrockLauncher.UI.Pages.Preview;
 
 namespace BedrockLauncher.Pages.Play.PatchNotes
 {
@@ -25,7 +25,10 @@ namespace BedrockLauncher.Pages.Play.PatchNotes
             LoadChangelog(item);
         }
 
-        public static void LoadChangelog(PatchNotes_Game_Item item) => ViewModels.MainViewModel.Default.SetOverlayFrame(new ChangelogPreviewPage(item.body, item.title, ""));
+        public static void LoadChangelog(PatchNotes_Game_Item item)
+        {
+            ViewModels.MainViewModel.Default.SetOverlayFrame(new ChangelogPreviewPage(item.body, item.title, ""));
+        }
 
         private ImageSource ToImageSource(string path, bool isFallback)
         {

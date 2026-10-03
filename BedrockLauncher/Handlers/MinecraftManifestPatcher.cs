@@ -39,13 +39,6 @@ namespace BedrockLauncher.Handlers
             identity.SetAttributeValue("Name", identityName);
             identity.SetAttributeValue("Publisher", publisher);
 
-            /*
-             * Minecraft GDK/UWP packages may ship GameLaunchHelper /
-             * GDKLaunchShim, which routes through the Microsoft updater.
-             * Point at Minecraft.Windows.exe and keep Minecraft's native
-             * UWP entry point (Minecraft_Win10.App) — do not use
-             * Windows.FullTrustApplication.
-             */
             foreach (var app in applications)
             {
                 var executable = app.Attribute("Executable");

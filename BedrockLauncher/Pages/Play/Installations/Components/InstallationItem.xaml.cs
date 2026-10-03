@@ -1,10 +1,10 @@
-﻿using BedrockLauncher.Classes;
+﻿using System.Windows;
+using System.Windows.Controls;
+using BedrockLauncher.Classes;
 using BedrockLauncher.Pages.Play.Installations;
 using BedrockLauncher.Pages.Preview.Installation;
 using BedrockLauncher.UI.Pages.Common;
 using BedrockLauncher.ViewModels;
-using System.Windows;
-using System.Windows.Controls;
 
 namespace BedrockLauncher.Pages.Play.Installations.Components
 {
@@ -32,7 +32,10 @@ namespace BedrockLauncher.Pages.Play.Installations.Components
 
         public static readonly DependencyProperty ButtonPanelVisibilityProperty = DependencyProperty.Register("ButtonPanelVisibility", typeof(Visibility), typeof(InstallationItem), new PropertyMetadata(Visibility.Collapsed, new PropertyChangedCallback(ChangePanelVisibility)));
 
-        private static void ChangePanelVisibility(DependencyObject d, DependencyPropertyChangedEventArgs e) => (d as InstallationItem).ButtonPanelVisibility = (Visibility)e.NewValue;
+        private static void ChangePanelVisibility(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            (d as InstallationItem).ButtonPanelVisibility = (Visibility)e.NewValue;
+        }
 
         private void Folder_Click(object sender, RoutedEventArgs e)
         {
@@ -78,7 +81,10 @@ namespace BedrockLauncher.Pages.Play.Installations.Components
             button.ContextMenu.IsOpen = true;
         }
 
-        private void ContextMenu_Closed(object sender, RoutedEventArgs e) => (this.Tag as Pages.Play.Installations.InstallationsScreen).InstallationsList.SelectedItem = null;
+        private void ContextMenu_Closed(object sender, RoutedEventArgs e)
+        {
+            (this.Tag as Pages.Play.Installations.InstallationsScreen).InstallationsList.SelectedItem = null;
+        }
 
         private void EditInstallationButton_Click(object sender, RoutedEventArgs e)
         {
@@ -122,7 +128,10 @@ namespace BedrockLauncher.Pages.Play.Installations.Components
             }
         }
 
-        private void UserControl_Loaded(object sender, RoutedEventArgs e) => UpdateButtonVisibility();
+        private void UserControl_Loaded(object sender, RoutedEventArgs e)
+        {
+            UpdateButtonVisibility();
+        }
 
         private void InstallInstallationButton_Click(object sender, RoutedEventArgs e)
         {
